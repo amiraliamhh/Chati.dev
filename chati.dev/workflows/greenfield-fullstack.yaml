@@ -51,6 +51,10 @@ phases:
         creates: [chati.dev/artifacts/3-Architecture/architecture.md]
         template: fullstack-architecture-tmpl.yaml
         notes: "Tech stack selection, data model, deployment strategy"
+      - agent: architect
+        action: dep-audit
+        creates: [chati.dev/artifacts/3-Architecture/dep-audit.yaml]
+        notes: "Verify dependency versions, vulnerabilities, and compatibility before implementation"
       - agent: ux
         action: define-experience
         creates: [chati.dev/artifacts/4-UX/ux-specification.md]

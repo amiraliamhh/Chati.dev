@@ -12,6 +12,7 @@ criteria:
   - Specific technologies chosen for each layer
   - Choices justified with technical reasoning
   - Compatibility verified
+  - Version verification completed (no deprecated packages, no critical CVEs at chosen versions)
 ---
 # Select Technology Stack
 
@@ -29,6 +30,33 @@ Expand with specific versions and libraries:
 - Testing: Vitest, React Testing Library, Playwright
 
 Document rationale for each choice.
+
+### Version Verification (mandatory before finalizing)
+For each technology in the stack:
+1. Verify the chosen version is NOT deprecated or end-of-life
+2. Check if a newer stable version exists (flag if major version behind)
+3. Verify runtime alignment (Node.js version, TypeScript version compatibility)
+4. Check peer dependency compatibility between all chosen packages
+5. If context7 MCP is available: query for latest stable versions and known issues
+6. If web search is available: check npm registry for deprecation notices
+
+Output a compatibility matrix as part of stack-selection.yaml:
+```yaml
+version_check:
+  status: verified | warnings | blocked
+  verified_at: "{ISO timestamp}"
+  findings:
+    - package: "{name}"
+      chosen: "{version}"
+      latest_stable: "{version}"
+      deprecated: true | false
+      known_cves: [] | [{id, severity}]
+      note: "{explanation}"
+```
+
+If any package has critical CVEs or is deprecated:
+  → Present alternatives to user before proceeding
+  → Do NOT finalize stack with known critical vulnerabilities
 
 ## Output Format
 ```yaml

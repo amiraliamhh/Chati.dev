@@ -87,6 +87,16 @@ export function selectAgent(context) {
 
   // If starting fresh with no completed agents
   if (completedAgents.length === 0) {
+    // Quick Flow: fast-track pipeline (Brief quick → Dev → QA → Deploy)
+    if (intent === INTENT_TYPES.QUICK_FLOW) {
+      return {
+        agent: 'brief',
+        reason: 'Quick flow detected — fast-track pipeline',
+        parallelGroup: null,
+        workflowType: 'quick-flow',
+      };
+    }
+
     // Planning intent starts with WU
     if (intent === INTENT_TYPES.DISCOVER) {
       const wuAgent = isGreenfield ? 'greenfield-wu' : 'brownfield-wu';

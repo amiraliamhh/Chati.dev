@@ -71,6 +71,45 @@ export function initPipeline(options = {}) {
 }
 
 /**
+ * Quick Flow pipeline agents (subset of full pipeline).
+ * Skips: WU, Detail, Architect, UX, Phases, Tasks, QA-Planning.
+ */
+const QUICK_FLOW_AGENTS = ['brief', 'dev', 'qa-implementation', 'devops'];
+
+/**
+ * Initialize a Quick Flow pipeline (fast-track for simple tasks).
+ *
+ * @param {object} options - { isGreenfield, mode }
+ * @returns {object} Pipeline state
+ */
+export function initQuickFlowPipeline(options = {}) {
+  const { isGreenfield = false, mode = 'discover' } = options;
+
+  const agents = {};
+  for (const agentName of QUICK_FLOW_AGENTS) {
+    agents[agentName] = {
+      status: AGENT_STATUS.PENDING,
+      score: null,
+      startedAt: null,
+      completedAt: null,
+    };
+  }
+
+  return {
+    phase: mode,
+    isGreenfield,
+    isQuickFlow: true,
+    startedAt: new Date().toISOString(),
+    completedAt: null,
+    agents,
+    completedAgents: [],
+    currentAgent: null,
+    modeTransitions: [],
+    history: [],
+  };
+}
+
+/**
  * Advance the pipeline after an agent completes.
  *
  * @param {object} pipelineState - Current state

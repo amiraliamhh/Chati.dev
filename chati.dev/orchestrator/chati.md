@@ -172,11 +172,19 @@ In fresh install case, project.type and language are already in session.yaml —
 ```
 1. Update session.yaml: current_agent = greenfield-wu | brownfield-wu (based on project.type)
 2. Activate Session Lock (see Session Lock Protocol)
-3. If greenfield -> Read chati.dev/agents/discover/greenfield-wu.md -> Activate IMMEDIATELY
+3. Acknowledge inline prompt (if provided):
+   IF $ARGUMENTS is not empty AND was not consumed as a subcommand:
+     Display: "Got it — I'll use your description as context for the first agent."
+     Store $ARGUMENTS in session.yaml under initial_context for agent handoff
+     The activated agent MUST reference this context in its first interaction
+   ELSE:
+     Continue normally (agent will ask from scratch)
+4. If greenfield -> Read chati.dev/agents/discover/greenfield-wu.md -> Activate IMMEDIATELY
    If brownfield -> Read chati.dev/agents/discover/brownfield-wu.md -> Activate IMMEDIATELY
-4. The agent starts its work right away — no "Continue with X?" prompt needed
+5. The agent starts its work right away — no "Continue with X?" prompt needed
    For greenfield-wu: begin asking the user about their project vision
    For brownfield-wu: begin analyzing the existing codebase
+   If initial_context exists: agent uses it as seed input (skip redundant questions already answered)
 ```
 
 ### Step 5: Session Resume

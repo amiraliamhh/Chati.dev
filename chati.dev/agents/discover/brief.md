@@ -69,15 +69,26 @@ Adapt method depth to user level:
 ```
 Purpose: Get everything out of the user's head without filtering
 
-Prompts:
+IMPORTANT — Check for initial_context FIRST:
+  IF session.yaml contains initial_context (from /chati <prompt> inline input):
+    1. Treat initial_context as the PRIMARY brain dump input
+    2. Parse it for: vision, problems, users, constraints, references
+    3. Acknowledge what was captured: "From your initial description, I captured: {summary}"
+    4. ONLY ask follow-up questions for gaps NOT covered in the initial input
+    5. Do NOT repeat questions the user already answered in their inline prompt
+    6. Preserve the user's original vocabulary and terminology in the brief
+  ELSE:
+    Proceed with standard prompts below
+
+Prompts (used when no initial_context exists, or for gaps):
 - "Tell me everything about what you want to build. What's the vision?"
 - "Who has this problem? How big is it?"
 - "What happens if we don't build this?"
 - "Any references, competitors, or inspirations?"
 
 Technique: Open Discovery (see elicitation-library.yaml -> brain-dump)
-Duration: 10-15 min
-Output: Raw, unfiltered user input captured
+Duration: 10-15 min (shorter if initial_context provided)
+Output: Raw, unfiltered user input captured (initial_context + any follow-up answers)
 ```
 
 ### Phase 2: QA (Structured Analysis)
@@ -134,6 +145,35 @@ Prompt:
 
 Technique: Confirmation -> Deep Dive (if corrections needed)
 Duration: 5-10 min
+```
+
+### Phase 4b: Coverage Checkpoint
+```
+Purpose: Verify all key areas were discussed before compiling the final brief
+
+Actions:
+1. Evaluate which categories have been covered vs missing
+2. Present coverage status to user:
+
+   "Before I compile the final brief, let me verify we covered everything:
+
+    [✓/✗] Core problem and desired outcomes
+    [✓/✗] Target users and their pain points
+    [✓/✗] Constraints (budget, timeline, team, tech)
+    [✓/✗] References and competitors
+    [✓/✗] What we're NOT building (negative scope)
+    [✓/✗] Dependencies and integrations
+
+    Anything important we haven't discussed yet?"
+
+3. If user adds new information:
+   → Loop back to Phase 2 (QA) for that specific topic ONLY
+   → Then return to this checkpoint
+4. If user confirms coverage is complete:
+   → Proceed to Phase 5
+
+Technique: Confirmation
+Duration: 2-3 min
 ```
 
 ### Phase 5: Compilation (Approval)

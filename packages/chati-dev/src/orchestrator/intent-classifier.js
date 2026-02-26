@@ -16,6 +16,7 @@ export const INTENT_TYPES = {
   STATUS: 'status',
   RESUME: 'resume',
   HELP: 'help',
+  QUICK_FLOW: 'quick_flow',
 };
 
 /**
@@ -67,6 +68,11 @@ const INTENT_KEYWORDS = {
     high: ['help', 'guide', 'tutorial', 'documentation', 'docs'],
     medium: ['how to', 'what is', 'explain', 'confused'],
     low: ['support', 'assist', 'info'],
+  },
+  [INTENT_TYPES.QUICK_FLOW]: {
+    high: ['quick fix', 'hotfix', 'bug fix', 'small change', 'just fix', 'just do it'],
+    medium: ['fix', 'tweak', 'config', 'patch', 'simple'],
+    low: ['change', 'adjust', 'small', 'update'],
   },
 };
 
@@ -215,6 +221,7 @@ export function getIntentPhase(intent) {
     [INTENT_TYPES.STATUS]: null, // no phase change
     [INTENT_TYPES.RESUME]: null, // uses current phase
     [INTENT_TYPES.HELP]: null, // no phase change
+    [INTENT_TYPES.QUICK_FLOW]: 'discover', // starts with quick brief
   };
 
   return phaseMap[intent];
@@ -264,5 +271,88 @@ export function checkModeAlignment(intent, currentMode) {
     needsChange: true,
     targetMode: targetPhase,
     reason: `Intent requires ${targetPhase} mode (backward transition - deviation protocol)`,
+  };
+}
+
+/**
+ * Quick Flow trigger and disqualifier keywords.
+ */
+const QUICK_FLOW_TRIGGERS = [
+  'quick fix', 'hotfix', 'bug fix', 'small change', 'just fix',
+  'just do it', 'simple fix', 'patch', 'config change',
+];
+
+const QUICK_FLOW_DISQUALIFIERS = [
+  'architecture', 'design system', 'database schema', 'auth',
+  'authentication', 'multiple services', 'microservices', 'enterprise',
+  'compliance', 'full pipeline', 'full process',
+];
+
+/**
+ * Detect if a message qualifies for Quick Flow (fast-track pipeline).
+ * Quick Flow skips Detail, Architect, UX, Phases, Tasks, QA-Planning.
+ *
+ * @param {string} message - User's raw input
+ * @param {object} [sessionContext] - { mode, currentAgent, isGreenfield, hasExistingCodebase }
+ * @returns {{ isQuickFlow: boolean, confidence: number, reason: string }}
+ */
+export function detectQuickFlow(message, sessionContext = {}) {
+  const normalized = message.toLowerCase().trim();
+
+  // Check for disqualifiers first (they override triggers)
+  for (const disqualifier of QUICK_FLOW_DISQUALIFIERS) {
+    if (normalized.includes(disqualifier)) {
+      return {
+        isQuickFlow: false,
+        confidence: 0.9,
+        reason: `Disqualified: message contains "${disqualifier}"`,
+      };
+    }
+  }
+
+  // Complex greenfield projects (multiple requirements, architecture needed) are disqualified
+  // But simple greenfield (single-purpose tool, fun project, prototype) are allowed
+  const sentenceCount = normalized.split(/[.!?]+/).filter((s) => s.trim().length > 0).length;
+  const requirementSignals = (normalized.match(/\band\b|\balso\b|\bplus\b|\badditionally\b/g) || []).length;
+
+  if (sessionContext.isGreenfield && (sentenceCount > 3 || requirementSignals > 2)) {
+    return {
+      isQuickFlow: false,
+      confidence: 0.7,
+      reason: 'Greenfield with multiple requirements detected',
+    };
+  }
+
+  // Check for trigger keywords
+  let triggerScore = 0;
+  const matchedTriggers = [];
+
+  for (const trigger of QUICK_FLOW_TRIGGERS) {
+    if (normalized.includes(trigger)) {
+      triggerScore += 3;
+      matchedTriggers.push(trigger);
+    }
+  }
+
+  // Single-sentence requests are a signal for quick flow
+  if (sentenceCount <= 1 && normalized.length < 200) {
+    triggerScore += 2;
+  }
+
+  // Calculate confidence
+  const confidence = Math.min(triggerScore / 5, 1.0);
+
+  if (confidence >= 0.8) {
+    return {
+      isQuickFlow: true,
+      confidence,
+      reason: `Quick flow triggers matched: ${matchedTriggers.join(', ') || 'short single-requirement message'}`,
+    };
+  }
+
+  return {
+    isQuickFlow: false,
+    confidence,
+    reason: `Confidence ${confidence.toFixed(2)} below threshold 0.8`,
   };
 }
