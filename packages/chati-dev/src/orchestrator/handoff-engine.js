@@ -223,6 +223,83 @@ export function getHandoffHistory(projectDir) {
 }
 
 /**
+ * Minimum required handoff fields per receiving agent.
+ * Used by pre-flight context integrity check.
+ */
+const AGENT_HANDOFF_REQUIREMENTS = {
+  'brief':               { needs: ['summary'] },
+  'detail':              { needs: ['summary', 'outputs'] },
+  'architect':           { needs: ['summary', 'outputs'] },
+  'ux':                  { needs: ['summary', 'outputs'] },
+  'phases':              { needs: ['summary', 'outputs'] },
+  'tasks':               { needs: ['summary', 'outputs'] },
+  'qa-planning':         { needs: ['summary', 'outputs'] },
+  'dev':                 { needs: ['summary', 'outputs'] },
+  'qa-implementation':   { needs: ['summary', 'outputs'] },
+  'devops':              { needs: ['summary', 'outputs'] },
+};
+
+/**
+ * Pre-flight context integrity check.
+ * Validates that a handoff contains sufficient context for the receiving agent.
+ * Run this BEFORE activating an agent to catch missing context early.
+ *
+ * @param {object|null} handoff - Loaded handoff from previous agent
+ * @param {string} receivingAgent - Agent about to be activated
+ * @returns {{ valid: boolean, missing: string[], warnings: string[] }}
+ */
+export function validateHandoffIntegrity(handoff, receivingAgent) {
+  const missing = [];
+  const warnings = [];
+
+  // No handoff at all
+  if (!handoff) {
+    missing.push('No handoff document found from previous agent');
+    return { valid: false, missing, warnings };
+  }
+
+  // Universal checks
+  if (!handoff.summary || handoff.summary.trim().length < 10) {
+    missing.push('Handoff summary is empty or too short (< 10 chars)');
+  }
+
+  if (handoff.status === 'partial') {
+    warnings.push('Previous agent handoff is marked as partial');
+  }
+
+  if (handoff.score !== null && handoff.score !== undefined && handoff.score < 90) {
+    warnings.push(`Previous agent score (${handoff.score}) is below 90% threshold`);
+  }
+
+  // Agent-specific checks
+  const reqs = AGENT_HANDOFF_REQUIREMENTS[receivingAgent];
+  if (reqs) {
+    for (const field of reqs.needs) {
+      const value = handoff[field];
+      if (!value || (Array.isArray(value) && value.length === 0)) {
+        missing.push(`Required field '${field}' is missing or empty`);
+      }
+    }
+  }
+
+  // Check for unresolved blockers
+  if (handoff.blockers && handoff.blockers.length > 0) {
+    const criticalBlockers = handoff.blockers.filter(b =>
+      b.toLowerCase().includes('critical') || b.toLowerCase().includes('blocking')
+    );
+    if (criticalBlockers.length > 0) {
+      warnings.push(`${criticalBlockers.length} critical blocker(s) from previous agent`);
+    }
+  }
+
+  return {
+    valid: missing.length === 0,
+    missing,
+    warnings,
+  };
+}
+
+/**
  * Check if rollback to a previous agent is possible.
  * @param {string} projectDir
  * @param {string} targetAgent - Agent to rollback to

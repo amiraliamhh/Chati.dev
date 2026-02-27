@@ -4,6 +4,7 @@
  */
 
 import { AGENT_PIPELINE, getNextAgent } from './agent-selector.js';
+import { calculateBracket, estimateRemaining } from '../context/bracket-tracker.js';
 
 /**
  * Pipeline phases in order.
@@ -115,7 +116,7 @@ export function initQuickFlowPipeline(options = {}) {
  * @param {object} pipelineState - Current state
  * @param {string} completedAgent - Agent that just finished
  * @param {object} [results] - Agent results (score, outputs)
- * @returns {{ state: object, nextAction: string, nextAgent: string|null, needsModeSwitch: boolean }}
+ * @returns {{ state: object, nextAction: string, nextAgent: string|null, needsModeSwitch: boolean, contextBracket: object }}
  */
 export function advancePipeline(pipelineState, completedAgent, results = {}) {
   const newState = { ...pipelineState };
@@ -136,6 +137,12 @@ export function advancePipeline(pipelineState, completedAgent, results = {}) {
   if (!newState.completedAgents.includes(completedAgent)) {
     newState.completedAgents.push(completedAgent);
   }
+
+  // Calculate context bracket from pipeline progress
+  const totalAgents = Object.keys(newState.agents).length;
+  const completedCount = newState.completedAgents.length;
+  const remaining = estimateRemaining(completedCount, totalAgents);
+  const contextBracket = calculateBracket(remaining);
 
   // Add to history
   newState.history.push({
@@ -159,6 +166,7 @@ export function advancePipeline(pipelineState, completedAgent, results = {}) {
           nextAction: 'user_preview',
           nextAgent: null,
           needsModeSwitch: false,
+          contextBracket,
           previewContext: {
             qaScore: newState.agents['qa-implementation'].score,
           },
@@ -185,6 +193,7 @@ export function advancePipeline(pipelineState, completedAgent, results = {}) {
           nextAction: 'advance_phase',
           nextAgent: getFirstAgentInPhase(newState, nextPhase),
           needsModeSwitch: true,
+          contextBracket,
         };
       }
 
@@ -195,6 +204,7 @@ export function advancePipeline(pipelineState, completedAgent, results = {}) {
         nextAction: 'complete',
         nextAgent: null,
         needsModeSwitch: false,
+        contextBracket,
       };
     } else {
       // QA failed - wait for issues to be fixed
@@ -203,6 +213,7 @@ export function advancePipeline(pipelineState, completedAgent, results = {}) {
         nextAction: 'wait',
         nextAgent: null,
         needsModeSwitch: false,
+        contextBracket,
       };
     }
   }
@@ -231,6 +242,7 @@ export function advancePipeline(pipelineState, completedAgent, results = {}) {
         nextAction: 'advance_phase',
         nextAgent: getFirstAgentInPhase(newState, nextPhase),
         needsModeSwitch: true,
+        contextBracket,
       };
     }
 
@@ -241,6 +253,7 @@ export function advancePipeline(pipelineState, completedAgent, results = {}) {
       nextAction: 'complete',
       nextAgent: null,
       needsModeSwitch: false,
+      contextBracket,
     };
   }
 
@@ -259,6 +272,7 @@ export function advancePipeline(pipelineState, completedAgent, results = {}) {
       nextAction: 'continue',
       nextAgent: nextInfo.next,
       needsModeSwitch: false,
+      contextBracket,
     };
   }
 
@@ -268,6 +282,7 @@ export function advancePipeline(pipelineState, completedAgent, results = {}) {
     nextAction: 'wait',
     nextAgent: null,
     needsModeSwitch: false,
+    contextBracket,
   };
 }
 
