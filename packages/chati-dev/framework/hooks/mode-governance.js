@@ -89,9 +89,9 @@ async function main() {
         reason: `[Article XI] ${scope.description}. Cannot write to "${filePath}" in ${mode} mode.`,
       }));
     }
-  } catch {
-    // On error, allow (fail-open to avoid blocking legitimate work)
-    process.stdout.write(JSON.stringify({ decision: 'allow' }));
+  } catch (err) {
+    process.stderr.write(`[chati-hook-error] mode-governance: ${err?.message || 'unknown'}\n`);
+    process.stdout.write(JSON.stringify({ decision: 'block', reason: 'Hook error — fail-closed for safety' }));
   }
 }
 

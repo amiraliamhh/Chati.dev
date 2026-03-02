@@ -404,3 +404,94 @@ describe('installFramework with gemini-cli — CLI Parity', () => {
     assert.ok(content.includes('.gemini/session-lock.md'), 'Should gitignore .gemini/session-lock.md');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Multi-Provider Continuity: Claude + Gemini
+// ---------------------------------------------------------------------------
+
+describe('installFramework with multi-provider (claude + gemini)', () => {
+  let tempDir;
+  const multiConfig = {
+    projectName: 'multi-provider-test',
+    projectType: 'greenfield',
+    language: 'en',
+    selectedIDEs: ['claude-code', 'gemini-cli'],
+    selectedMCPs: [],
+    version: '3.3.0',
+    llmProvider: 'claude',
+    allProviders: ['claude', 'gemini'],
+  };
+
+  before(async () => {
+    tempDir = mkdtempSync(join(tmpdir(), 'chati-multi-'));
+    multiConfig.targetDir = tempDir;
+    await installFramework(multiConfig);
+  });
+
+  after(() => {
+    rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('creates .adapted/ directory for secondary provider', () => {
+    assert.ok(existsSync(join(tempDir, 'chati.dev', '.adapted', 'gemini')),
+      'Should create .adapted/gemini/ overlay directory');
+  });
+
+  it('.adapted/gemini/ contains orchestrator', () => {
+    const orchPath = join(tempDir, 'chati.dev', '.adapted', 'gemini', 'orchestrator', 'chati.md');
+    assert.ok(existsSync(orchPath), 'Should create overlay orchestrator');
+  });
+
+  it('.adapted/gemini/ orchestrator references Gemini CLI', () => {
+    const orchPath = join(tempDir, 'chati.dev', '.adapted', 'gemini', 'orchestrator', 'chati.md');
+    if (!existsSync(orchPath)) return;
+    const content = readFileSync(orchPath, 'utf-8');
+    assert.ok(content.includes('Gemini CLI'), 'Overlay should reference Gemini CLI');
+    assert.ok(!content.includes('Claude Code'), 'Overlay should NOT reference Claude Code');
+  });
+
+  it('main chati.dev/ orchestrator still references Claude Code', () => {
+    const orchPath = join(tempDir, 'chati.dev', 'orchestrator', 'chati.md');
+    if (!existsSync(orchPath)) return;
+    const content = readFileSync(orchPath, 'utf-8');
+    assert.ok(content.includes('Claude Code'), 'Main should reference Claude Code');
+  });
+
+  it('gemini router points to overlay orchestrator', () => {
+    const routerPath = join(tempDir, '.gemini', 'commands', 'chati.toml');
+    assert.ok(existsSync(routerPath), 'Should create gemini router');
+    const content = readFileSync(routerPath, 'utf-8');
+    assert.ok(content.includes('.adapted/gemini/orchestrator/chati.md'),
+      'Gemini router should point to overlay orchestrator');
+  });
+
+  it('claude router points to main orchestrator', () => {
+    const routerPath = join(tempDir, '.claude', 'commands', 'chati.md');
+    assert.ok(existsSync(routerPath), 'Should create claude router');
+    const content = readFileSync(routerPath, 'utf-8');
+    assert.ok(!content.includes('.adapted'), 'Claude router should NOT point to overlay');
+    assert.ok(content.includes('chati.dev/orchestrator/chati.md'),
+      'Claude router should point to main orchestrator');
+  });
+
+  it('config.yaml lists both providers as enabled', () => {
+    const configPath = join(tempDir, 'chati.dev', 'config.yaml');
+    const content = readFileSync(configPath, 'utf-8');
+    // Both claude and gemini should be enabled
+    assert.ok(content.includes('claude'), 'Should list claude');
+    assert.ok(content.includes('gemini'), 'Should list gemini');
+  });
+
+  it('session.yaml has providers_enabled with both providers', () => {
+    const sessionPath = join(tempDir, '.chati', 'session.yaml');
+    const content = readFileSync(sessionPath, 'utf-8');
+    assert.ok(content.includes('claude'), 'Should include claude in providers');
+    assert.ok(content.includes('gemini'), 'Should include gemini in providers');
+  });
+
+  it('session.yaml has primary_provider field', () => {
+    const sessionPath = join(tempDir, '.chati', 'session.yaml');
+    const content = readFileSync(sessionPath, 'utf-8');
+    assert.ok(content.includes('primary_provider: claude'), 'Should have primary_provider: claude');
+  });
+});

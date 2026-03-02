@@ -472,5 +472,5 @@ When multiple CLI providers are enabled, the system SHALL coordinate agent execu
 
 ---
 
-*Chati.dev Constitution v3.0.0 — 19 Articles + Preamble*
+*Chati.dev Constitution v3.3.0 — 19 Articles + Preamble*
 *All agents are bound by this Constitution. Violations are enforced per article.*

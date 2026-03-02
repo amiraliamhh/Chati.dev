@@ -6,6 +6,11 @@
  * results, handoffs, and deviations.
  */
 
+/**
+ * @deprecated Not currently imported by any production module.
+ * Retained for potential future integration. Remove if still unused by v4.0.
+ */
+
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 

@@ -33,14 +33,6 @@ export {
 } from './pipeline-manager.js';
 
 export {
-  loadPipelineState,
-  savePipelineState,
-  updatePipelineState,
-  sessionExists,
-  deleteSession,
-} from './pipeline-state.js';
-
-export {
   executeHandoff,
   validateHandoffPreconditions,
   loadHandoffContext,

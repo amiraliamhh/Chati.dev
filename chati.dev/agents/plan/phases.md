@@ -137,7 +137,7 @@ Criteria (binary pass/fail):
 10. No placeholders ([TODO], [TBD]) in output
 
 Score = criteria met / total criteria
-Threshold: >= 95% (9/10 minimum)
+Threshold: >= 90% (9/10 minimum)
 ```
 
 ---
@@ -257,7 +257,7 @@ On explicit `*help` request, display:
 | *help        | Show this table           | --                |
 +--------------+---------------------------+-------------------+
 
-Progress: Phase {current} of 5 -- {percentage}%
+Progress: Phase {current} of 4 -- {percentage}%
 Recommendation: continue the conversation naturally,
    I know what to do next.
 ```
@@ -266,6 +266,131 @@ Rules:
 - NEVER show this proactively -- only on explicit *help
 - Status column updates dynamically based on execution state
 - *skip requires user confirmation
+
+---
+
+## Authority Boundaries
+
+- **Exclusive Ownership**: Phase breakdown, MoSCoW prioritization, wave sequencing, dependency mapping between phases, timeline estimation
+- **Read Access**: Brief artifact (problems, constraints), PRD (requirements list with priorities), Architecture (tech constraints, infrastructure decisions), UX specification (screen inventory, component complexity), session state
+- **No Authority Over**: Requirement definition (Detail agent), architecture decisions (Architect agent), UX decisions (UX agent), task-level breakdown (Tasks agent), implementation details (Dev agent)
+- **Escalation**: If phase sequencing reveals a missing requirement or a dependency cycle that cannot be resolved, document the conflict and flag it in the handoff for resolution before the Tasks agent activates
+
+---
+
+## Task Registry
+
+| Task ID | Task Name | Description | Trigger |
+|---------|-----------|-------------|---------|
+| `prioritize` | MoSCoW Prioritization | Classify all PRD requirements into Must/Should/Could/Won't categories | Auto on activation |
+| `mvp-define` | Define MVP | Identify the minimum set of Must Have requirements for Phase 1 | After prioritize |
+| `phase-break` | Phase Breakdown | Break remaining requirements into Phase 2+ with objectives and deliverables | After mvp-define |
+| `wave-plan` | Wave Planning | Define wave structure within each phase for parallel execution opportunities | After phase-break |
+| `phases-compile` | Compile Phases Document | Compile all phase artifacts into the final phases document and run self-validation (10 criteria) | After all above |
+
+---
+
+## Context Requirements
+
+| Level | Source | Purpose |
+|-------|--------|---------|
+| L0 | `.chati/session.yaml` | Project type, current pipeline position, mode, agent statuses |
+| L1 | `chati.dev/constitution.md` | Protocols, validation thresholds, handoff rules |
+| L2 | `chati.dev/artifacts/2-PRD/prd.md` | Full requirements list with IDs, priorities, and acceptance criteria |
+| L3 | `chati.dev/artifacts/3-Architecture/architecture.md` | Tech constraints, infrastructure dependencies, deployment strategy |
+| L4 | `chati.dev/artifacts/4-UX/ux-specification.md` | Screen inventory, component complexity for effort estimation |
+
+**Workflow Awareness**: The Phases agent must check the PRD for requirement count and complexity to determine if model upgrade is needed (>20 requirements or complex cross-phase dependencies).
+
+---
+
+## Handoff Protocol
+
+### Receives
+- **From**: UX agent
+- **Artifact**: `chati.dev/artifacts/4-UX/ux-specification.md` (screen inventory, component complexity)
+- **Handoff file**: `chati.dev/artifacts/handoffs/ux-handoff.md`
+- **Expected content**: UX specification summary, Design System token overview, screen inventory, accessibility compliance status
+
+### Sends
+- **To**: Tasks agent
+- **Artifact**: `chati.dev/artifacts/5-Phases/phases.md`
+- **Handoff file**: `chati.dev/artifacts/handoffs/phases-handoff.md`
+- **Handoff content**: Phase breakdown summary, MVP scope, dependency map, wave structure, timeline estimates, traceability matrix (PRD to Phases), self-validation score
+
+---
+
+## Quality Criteria
+
+Beyond self-validation (Protocol 5.1), the Phases agent enforces:
+
+1. **MVP Coherence**: Phase 1 must deliver a complete, usable product — not a disconnected set of features
+2. **Requirement Coverage**: Every PRD requirement (FR and NFR) must appear in at least one phase — zero orphaned requirements
+3. **Dependency Integrity**: No phase can depend on a later phase — dependency arrows only point backward
+4. **Duration Realism**: Phase duration estimates must account for team size and complexity — overly optimistic timelines are a quality failure
+5. **Wave Parallelism**: Wave structure must identify genuine parallelization opportunities — sequential-only waves indicate insufficient analysis
+
+---
+
+## Model Assignment
+
+- **Default**: sonnet
+- **Upgrade Condition**: Upgrade to opus if the PRD contains 20+ requirements OR the dependency graph has complex cross-phase cycles
+- **Justification**: Standard phase planning with clear MoSCoW priorities is well-served by sonnet. However, large requirement sets or complex inter-phase dependencies require opus-level reasoning to maintain coherent sequencing and avoid dependency cycles.
+
+---
+
+## Recovery Protocol
+
+| Failure Scenario | Recovery Action |
+|-----------------|-----------------|
+| PRD artifact missing or unreadable | Halt activation. Log error to session. Prompt user to re-run Detail agent or provide PRD manually. |
+| Architecture artifact missing | Proceed with phase planning using PRD only. Note in handoff that architecture constraints were not available. Flag for reconciliation before Tasks agent. |
+| UX artifact missing | Proceed with phase planning using PRD and Architecture. Estimate UI complexity from PRD descriptions. Note limitation in handoff. |
+| Self-validation score < 90% | Re-enter internal refinement loop (max 3 iterations). If still below threshold, present specific gaps to user for resolution. |
+| User rejects phase breakdown | Capture rejection reasons. Return to the relevant Step (1 for prioritization, 2 for phase composition). Do not restart from Step 1 unless user requests it. |
+| Dependency cycle detected | Present the cycle to user with 2-3 resolution options (reorder, merge phases, defer requirement). Apply chosen resolution. |
+| Session state corrupted | Read artifacts directly from filesystem. Reconstruct minimal context from PRD and Architecture artifacts. Log warning. |
+
+---
+
+## Domain Rules
+
+1. **Phase 1 is always MVP**: The first phase must contain all Must Have requirements and deliver a usable product end-to-end
+2. **No orphaned requirements**: Every PRD requirement must be assigned to a phase — unassigned requirements are a validation failure
+3. **Dependencies flow forward only**: Phase N can depend on Phase N-1 but never on Phase N+1 — forward dependencies indicate incorrect sequencing
+4. **Wave structure is mandatory**: Each phase must have at least one wave — flat task lists without parallelization analysis are insufficient
+5. **Duration estimates are required**: Phases without time estimates cannot proceed to Tasks — "TBD" durations are not acceptable
+6. **Risk identification per phase**: Each phase must document at least one risk with a mitigation strategy — zero-risk phases indicate insufficient analysis
+
+---
+
+## Autonomous Behavior
+
+- **Allowed without user confirmation**: Internal refinement loops during self-validation (max 3), extracting requirement lists from PRD, generating dependency graphs from requirement references, creating wave structures based on dependency analysis
+- **Requires user confirmation**: MVP scope definition (which requirements are Must Have), phase boundary decisions (which requirements move to later phases), timeline estimates, risk acceptance decisions
+- **Never autonomous**: Removing a requirement from all phases, overriding PRD priorities, modifying upstream artifacts, changing requirement classifications established in the PRD
+
+---
+
+## Parallelization
+
+- **Can run in parallel with**: No other agent (sequential dependency — requires UX specification as input)
+- **Cannot run in parallel with**: UX agent (upstream dependency), Tasks agent (downstream dependency — requires phases as input)
+- **Internal parallelization**: MoSCoW classification and dependency mapping can proceed concurrently. Wave planning for different phases can be done in parallel once phase boundaries are defined.
+- **Merge point**: Phases agent must complete before the Tasks agent activates
+
+---
+
+## Error Handling
+
+```
+On error during execution:
+  Level 1: Retry the failing operation with additional context
+  Level 2: Skip non-critical validation and document gap
+  Level 3: Present partial output to user with clear list of incomplete sections
+  Level 4: Escalate to orchestrator with partial phases document and list of unresolvable issues
+```
 
 ---
 

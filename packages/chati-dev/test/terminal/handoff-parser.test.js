@@ -4,7 +4,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseAgentOutput } from '../../src/terminal/handoff-parser.js';
+import { parseAgentOutput, validateHandoff } from '../../src/terminal/handoff-parser.js';
 
 describe('handoff-parser', () => {
   describe('parseAgentOutput', () => {
@@ -200,6 +200,138 @@ needs_input_question:
       assert.equal(result.found, true);
       assert.equal(result.handoff.status, 'complete');
       assert.equal(result.handoff.score, 99);
+    });
+  });
+
+  describe('parseAgentOutput — validation fields', () => {
+    it('should include valid and warnings in result', () => {
+      const output = '<chati-handoff>\nstatus: APPROVED\nscore: 95\n</chati-handoff>';
+      const result = parseAgentOutput(output);
+
+      assert.equal(result.found, true);
+      assert.equal(typeof result.valid, 'boolean');
+      assert.ok(Array.isArray(result.warnings));
+    });
+
+    it('should mark valid handoff as valid', () => {
+      const output = '<chati-handoff>\nstatus: APPROVED\nscore: 95\nsummary: All good.\n</chati-handoff>';
+      const result = parseAgentOutput(output);
+
+      assert.equal(result.valid, true);
+    });
+
+    it('should include warnings for missing handoff block', () => {
+      const result = parseAgentOutput('no handoff here');
+      assert.equal(result.valid, false);
+      assert.ok(result.warnings.length > 0);
+    });
+
+    it('should include warnings for null input', () => {
+      const result = parseAgentOutput(null);
+      assert.equal(result.valid, false);
+      assert.ok(result.warnings.length > 0);
+    });
+  });
+
+  describe('validateHandoff', () => {
+    it('should validate a well-formed handoff', () => {
+      const handoff = {
+        status: 'APPROVED',
+        score: 95,
+        summary: 'All checks passed',
+        outputs: ['file.md'],
+        decisions: {},
+        blockers: [],
+      };
+      const result = validateHandoff(handoff);
+      assert.equal(result.valid, true);
+    });
+
+    it('should warn about invalid status', () => {
+      const handoff = { status: 'INVALID_STATUS', score: 50 };
+      const result = validateHandoff(handoff);
+      assert.equal(result.valid, false);
+      assert.ok(result.warnings.some(w => w.includes('Invalid status')));
+    });
+
+    it('should warn about score out of range', () => {
+      const handoff = { status: 'APPROVED', score: 150 };
+      const result = validateHandoff(handoff);
+      assert.ok(result.warnings.some(w => w.includes('out of range')));
+    });
+
+    it('should handle null handoff', () => {
+      const result = validateHandoff(null);
+      assert.equal(result.valid, false);
+    });
+
+    it('should accept NEEDS_REVISION status', () => {
+      const handoff = { status: 'NEEDS_REVISION', score: 70 };
+      const result = validateHandoff(handoff);
+      assert.equal(result.valid, true);
+    });
+
+    it('should accept BLOCKED status', () => {
+      const handoff = { status: 'BLOCKED', score: 30 };
+      const result = validateHandoff(handoff);
+      assert.equal(result.valid, true);
+    });
+  });
+
+  describe('provider metadata parsing', () => {
+    it('should parse provider field from handoff', () => {
+      const output = `<chati-handoff>
+status: APPROVED
+score: 96
+provider: gemini
+model: pro
+summary: Done.
+</chati-handoff>`;
+
+      const result = parseAgentOutput(output);
+      assert.equal(result.found, true);
+      assert.equal(result.handoff.provider, 'gemini');
+      assert.equal(result.handoff.model, 'pro');
+    });
+
+    it('should parse claude provider and opus model', () => {
+      const output = `<chati-handoff>
+status: APPROVED
+score: 97
+provider: claude
+model: opus
+summary: Done.
+</chati-handoff>`;
+
+      const result = parseAgentOutput(output);
+      assert.equal(result.handoff.provider, 'claude');
+      assert.equal(result.handoff.model, 'opus');
+    });
+
+    it('should default provider and model to null when not present', () => {
+      const output = `<chati-handoff>
+status: APPROVED
+score: 95
+summary: Done.
+</chati-handoff>`;
+
+      const result = parseAgentOutput(output);
+      assert.equal(result.handoff.provider, null);
+      assert.equal(result.handoff.model, null);
+    });
+
+    it('should handle codex provider with codex model', () => {
+      const output = `<chati-handoff>
+status: APPROVED
+score: 95
+provider: codex
+model: codex
+summary: Done.
+</chati-handoff>`;
+
+      const result = parseAgentOutput(output);
+      assert.equal(result.handoff.provider, 'codex');
+      assert.equal(result.handoff.model, 'codex');
     });
   });
 });

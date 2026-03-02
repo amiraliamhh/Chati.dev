@@ -5,6 +5,63 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [3.3.0] - 2026-03-02
+
+### Fixed
+
+- **Provider passthrough**: Multi-CLI spawned agents now correctly receive provider configuration from session context.
+- **G4 gate parsing**: QA-Implementation G4 gate now parses security report content instead of checking only file existence.
+- **MODERATE bracket layers**: Reduced MODERATE bracket from 5 to 4 PRISM layers for better context efficiency.
+- **UX agent criteria**: UX agent self-validation criteria count updated to 14 (was incorrect).
+
+### Changed
+
+- **Dead code removal**: Deleted unused `pipeline-state.js`.
+- **Registry healer optimization**: Optimized `registry-healer` to perform a single YAML read instead of multiple reads.
+- **Health engine registry path**: Fixed `health/engine.js` to use the correct registry file path.
+
+### Added
+
+- **Agent section coverage**: Completed 6 agents with full section coverage (all required sections populated).
+- **Version sync**: All version references across the framework synchronized to 3.3.0.
+
+---
+
+## [3.2.9] - 2026-02-28
+
+### Added
+
+- **Telemetry opt-in module**: 6 telemetry events with Supabase backend (fully opt-in, no data collected without consent).
+- **CLI telemetry commands**: `enable`, `disable`, `show`, `status` subcommands for telemetry management.
+- **Wizard consent step**: Installer wizard now includes a telemetry consent step.
+
+---
+
+## [3.2.8] - 2026-02-25
+
+### Fixed
+
+- **Non-code asset awareness**: Brief and Dev agents now recognize and handle non-code assets (images, fonts, icons, design files) during discovery and implementation.
+
+---
+
+## [3.2.7] - 2026-02-22
+
+### Added
+
+- **Context bracket display**: Terminal now shows the current context bracket (FRESH/MODERATE/DEPLETED/CRITICAL) during agent execution.
+- **Handoff integrity pre-flight**: Pre-flight check validates handoff document integrity before agent activation.
+
+---
+
+## [3.2.6] - 2026-02-21
+
+### Fixed
+
+- **User feedback fixes**: Addressed 6 user feedback issues identified during real-world testing.
+
+---
+
 ## [3.2.5] - 2026-02-20
 
 ### Changed
@@ -183,6 +240,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 14 files changed, 392 insertions, 66 deletions
 - 1206 tests passing, 0 failures
 
+## [3.0.1] - 2026-02-17
+
+### Fixed
+
+- **Full consistency audit**: State-to-governance mapping, session schema defaults, cross-reference validation across all 13 agents.
+- **LICENSE separation**: Dedicated LICENSE files for root and package directories.
+
+### Stats
+
+- 1157 tests passing, 0 failures
+
+---
+
 ## [3.0.0] - 2026-02-17
 
 ### Added
@@ -219,19 +289,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Constitution: 19 Articles + Preamble (v3.0.0)
 - Multi-CLI: 4 providers supported (claude, gemini, codex, copilot)
 - Claude Code remains primary and fully functional — multi-CLI is opt-in
-
----
-
-## [3.0.1] - 2026-02-17
-
-### Fixed
-
-- **Full consistency audit**: State-to-governance mapping, session schema defaults, cross-reference validation across all 13 agents.
-- **LICENSE separation**: Dedicated LICENSE files for root and package directories.
-
-### Stats
-
-- 1157 tests passing, 0 failures
 
 ---
 

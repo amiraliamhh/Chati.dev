@@ -314,11 +314,15 @@ For autonomous agents:
 ```
 1. Use the Bash tool to spawn the agent in a separate terminal:
 
+   > **Provider resolution**: The orchestrator MUST resolve the provider for each agent
+   > from config.yaml (agent_overrides > AGENT_MODELS default > primary provider) before spawning.
+
    node packages/chati-dev/src/terminal/run-agent.js \
      --agent {agent_name} \
      --task-id {primary_task_id} \
      --project-dir {absolute_project_path} \
      --previous-agent {previous_agent_name} \
+     --provider {resolved_provider} \
      --timeout 600000
 
 2. Wait for the JSON output
@@ -355,6 +359,7 @@ node packages/chati-dev/src/terminal/run-parallel.js \
   --task-ids {task_id_detail},{task_id_architect},{task_id_ux} \
   --project-dir {absolute_project_path} \
   --previous-agent brief \
+  --provider {resolved_provider} \
   --timeout 900000
 ```
 
@@ -1004,7 +1009,7 @@ If agent fails repeatedly:
 ### Allowed (orchestrator may also do this)
 - Read any file in the project (for state detection)
 - Write to .chati/session.yaml (session state)
-- Write to CLAUDE.md (session lock block)
+- Write to CLAUDE.local.md (session lock block)
 - Present status dashboards
 - Generate session digests
 

@@ -11,6 +11,20 @@ import yaml from 'js-yaml';
 import { detectNewEntities, detectRemovedEntities, generateEntityMeta } from './registry-updater.js';
 
 /**
+ * Load and parse the entity registry YAML once.
+ * @param {string} projectDir
+ * @returns {{ registry: object|null, registryPath: string }}
+ */
+function loadRegistry(projectDir) {
+  const registryPath = join(projectDir, 'chati.dev', 'entity-registry.yaml');
+  if (!existsSync(registryPath)) {
+    return { registry: null, registryPath };
+  }
+  const registry = yaml.load(readFileSync(registryPath, 'utf8'));
+  return { registry, registryPath };
+}
+
+/**
  * Run all healing rules and return diagnosis.
  * @param {string} projectDir
  * @param {object} [options] - { autoFix: boolean }
@@ -21,6 +35,9 @@ export function healRegistry(projectDir, options = {}) {
 
   const issues = [];
   const fixes = [];
+
+  // Load registry once for rules 3-6
+  const { registry } = loadRegistry(projectDir);
 
   // Rule 1: Missing entities
   const missingIssues = detectMissingEntities(projectDir);
@@ -50,7 +67,7 @@ export function healRegistry(projectDir, options = {}) {
   }
 
   // Rule 3: Stale metadata
-  const staleIssues = detectStaleMetadata(projectDir);
+  const staleIssues = detectStaleMetadata(projectDir, registry);
   issues.push(...staleIssues);
   if (autoFix) {
     staleIssues.forEach(issue => {
@@ -64,7 +81,7 @@ export function healRegistry(projectDir, options = {}) {
   }
 
   // Rule 4: Duplicates
-  const duplicateIssues = detectDuplicates(projectDir);
+  const duplicateIssues = detectDuplicates(projectDir, registry);
   issues.push(...duplicateIssues);
   if (autoFix) {
     duplicateIssues.forEach(issue => {
@@ -78,7 +95,7 @@ export function healRegistry(projectDir, options = {}) {
   }
 
   // Rule 5: Invalid paths
-  const invalidPathIssues = detectInvalidPaths(projectDir);
+  const invalidPathIssues = detectInvalidPaths(projectDir, registry);
   issues.push(...invalidPathIssues);
   if (autoFix) {
     invalidPathIssues.forEach(issue => {
@@ -92,7 +109,7 @@ export function healRegistry(projectDir, options = {}) {
   }
 
   // Rule 6: Count mismatch
-  const countIssues = detectCountMismatch(projectDir);
+  const countIssues = detectCountMismatch(projectDir, registry);
   issues.push(...countIssues);
   if (autoFix) {
     countIssues.forEach(issue => {
@@ -158,15 +175,15 @@ export function detectOrphanedEntries(projectDir) {
 /**
  * Rule 3: Stale metadata (file modified after registry entry).
  * @param {string} projectDir
+ * @param {object} [preloaded] - Pre-loaded registry object (avoids redundant file read)
  * @returns {object[]} Issues found
  */
-export function detectStaleMetadata(projectDir) {
-  const registryPath = join(projectDir, 'chati.dev', 'entity-registry.yaml');
-  if (!existsSync(registryPath)) {
+export function detectStaleMetadata(projectDir, preloaded) {
+  const registry = preloaded || loadRegistry(projectDir).registry;
+  if (!registry) {
     return [];
   }
 
-  const registry = yaml.load(readFileSync(registryPath, 'utf8'));
   const lastUpdated = registry.metadata?.last_updated
     ? new Date(registry.metadata.last_updated)
     : new Date(0);
@@ -202,15 +219,15 @@ export function detectStaleMetadata(projectDir) {
 /**
  * Rule 4: Duplicate entries (same path appears twice).
  * @param {string} projectDir
+ * @param {object} [preloaded] - Pre-loaded registry object (avoids redundant file read)
  * @returns {object[]} Issues found
  */
-export function detectDuplicates(projectDir) {
-  const registryPath = join(projectDir, 'chati.dev', 'entity-registry.yaml');
-  if (!existsSync(registryPath)) {
+export function detectDuplicates(projectDir, preloaded) {
+  const registry = preloaded || loadRegistry(projectDir).registry;
+  if (!registry) {
     return [];
   }
 
-  const registry = yaml.load(readFileSync(registryPath, 'utf8'));
   const pathCounts = new Map();
   const issues = [];
 
@@ -242,15 +259,15 @@ export function detectDuplicates(projectDir) {
 /**
  * Rule 5: Invalid paths (malformed or absolute paths).
  * @param {string} projectDir
+ * @param {object} [preloaded] - Pre-loaded registry object (avoids redundant file read)
  * @returns {object[]} Issues found
  */
-export function detectInvalidPaths(projectDir) {
-  const registryPath = join(projectDir, 'chati.dev', 'entity-registry.yaml');
-  if (!existsSync(registryPath)) {
+export function detectInvalidPaths(projectDir, preloaded) {
+  const registry = preloaded || loadRegistry(projectDir).registry;
+  if (!registry) {
     return [];
   }
 
-  const registry = yaml.load(readFileSync(registryPath, 'utf8'));
   const issues = [];
 
   Object.values(registry.entities || {}).forEach(entities => {
@@ -291,15 +308,15 @@ export function detectInvalidPaths(projectDir) {
 /**
  * Rule 6: Entity count mismatch (metadata.entity_count != actual).
  * @param {string} projectDir
+ * @param {object} [preloaded] - Pre-loaded registry object (avoids redundant file read)
  * @returns {object[]} Issues found
  */
-export function detectCountMismatch(projectDir) {
-  const registryPath = join(projectDir, 'chati.dev', 'entity-registry.yaml');
-  if (!existsSync(registryPath)) {
+export function detectCountMismatch(projectDir, preloaded) {
+  const registry = preloaded || loadRegistry(projectDir).registry;
+  if (!registry) {
     return [];
   }
 
-  const registry = yaml.load(readFileSync(registryPath, 'utf8'));
   let actualCount = 0;
 
   Object.values(registry.entities || {}).forEach(entities => {
@@ -346,7 +363,7 @@ export function applyFixes(projectDir, fixes) {
   const backupPath = join(backupDir, `entity-registry-${timestamp}.yaml`);
   copyFileSync(registryPath, backupPath);
 
-  // Load registry
+  // Load registry (fresh read for modification — applyFixes is the write path)
   const registry = yaml.load(readFileSync(registryPath, 'utf8'));
 
   let applied = 0;

@@ -41,7 +41,7 @@ DEPLOY:   DevOps
 Type `/chati` — the orchestrator reads session.yaml, GEMINI.md, and the latest handoff to determine where you left off and what comes next.
 
 ## Framework
-- **Version**: 3.0.0
+- **Version**: 3.3.0
 - **Agents**: 13 (12 specialized + orchestrator)
 - **Constitution**: 19 Articles + Preamble
 - **Multi-CLI**: 3 providers (claude, gemini, codex) — claude primary, others opt-in

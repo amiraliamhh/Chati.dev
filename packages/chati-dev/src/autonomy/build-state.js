@@ -18,6 +18,9 @@ import { join, dirname } from 'path';
 /** Maximum iterations per individual task before giving up */
 export const MAX_ITERATIONS_PER_TASK = 10;
 
+/** Maximum time per individual task before giving up (10 minutes) */
+export const MAX_TIME_PER_TASK_MS = 10 * 60 * 1000;
+
 /** Global timeout for an autonomous build session (30 minutes) */
 export const GLOBAL_TIMEOUT_MS = 30 * 60 * 1000;
 
@@ -58,6 +61,7 @@ export const CheckpointStatus = {
  * @property {string} taskId
  * @property {string} status - CheckpointStatus
  * @property {number} attempts - Number of execution attempts
+ * @property {string|null} firstAttempt - ISO timestamp of first attempt
  * @property {string|null} lastAttempt - ISO timestamp of last attempt
  * @property {string|null} output - Last output summary
  * @property {string|null} error - Last error message (if failed)
@@ -94,6 +98,7 @@ export function createBuildState(taskIds) {
       taskId,
       status: CheckpointStatus.PENDING,
       attempts: 0,
+      firstAttempt: null,
       lastAttempt: null,
       output: null,
       error: null,
@@ -157,6 +162,11 @@ export function updateCheckpoint(state, taskId, update) {
     throw new Error(`Task "${taskId}" not found in build state`);
   }
 
+  // Set firstAttempt on the first execution attempt
+  if (update.attempts !== undefined && update.attempts > 0 && !checkpoint.firstAttempt) {
+    checkpoint.firstAttempt = new Date().toISOString();
+  }
+
   Object.assign(checkpoint, update);
   state.lastCheckpoint = new Date().toISOString();
 
@@ -217,13 +227,21 @@ export function getNextPendingTask(state) {
 }
 
 /**
- * Check if a task has exceeded max iterations.
+ * Check if a task has exceeded max iterations or max time.
+ *
+ * Dual check: exhausted if attempts >= MAX_ITERATIONS_PER_TASK
+ * OR if elapsed time since first attempt >= MAX_TIME_PER_TASK_MS.
  *
  * @param {TaskCheckpoint} checkpoint
  * @returns {boolean}
  */
 export function isTaskExhausted(checkpoint) {
-  return checkpoint.attempts >= MAX_ITERATIONS_PER_TASK;
+  if (checkpoint.attempts >= MAX_ITERATIONS_PER_TASK) return true;
+  if (checkpoint.firstAttempt) {
+    const elapsed = Date.now() - new Date(checkpoint.firstAttempt).getTime();
+    if (elapsed >= MAX_TIME_PER_TASK_MS) return true;
+  }
+  return false;
 }
 
 /**

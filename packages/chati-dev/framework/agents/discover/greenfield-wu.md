@@ -103,7 +103,7 @@ Criteria (binary pass/fail):
 7. No placeholders ([TODO], [TBD]) in output
 
 Score = criteria met / total criteria
-Threshold: >= 95% (6/7 minimum)
+Threshold: >= 85% (6/7 minimum)
 If below: internal refinement loop (max 3x)
 ```
 
@@ -301,7 +301,7 @@ Contents:
   - Identified constraints
   - User level assessment update
 Post-conditions:
-  - WU report at chati.dev/artifacts/0-WU/wu-report.md
+  - WU report at chati.dev/artifacts/0-WU/wu-operational-report.md
   - session.yaml updated with WU completion data
 ```
 
@@ -318,7 +318,7 @@ Post-conditions:
 7. All user inputs acknowledged and incorporated
 8. No assumptions made without user confirmation
 
-Score threshold: 95%
+> These are supplementary enforcement dimensions validated during self-validation (Protocol 5.1). The authoritative threshold is defined above.
 
 ---
 

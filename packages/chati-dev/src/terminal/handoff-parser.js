@@ -4,28 +4,79 @@
  * Agents running in separate `claude -p` terminals include a
  * <chati-handoff> block in their output. This module extracts
  * and parses that block so the orchestrator can read the results.
+ *
+ * Includes integrity validation via schema checking (Item 13).
  */
+
+import { validateSchema, HANDOFF_SCHEMA } from '../utils/schema-validator.js';
+
+/**
+ * Valid status values for handoff blocks.
+ * @type {string[]}
+ */
+const VALID_STATUSES = ['APPROVED', 'NEEDS_REVISION', 'BLOCKED', 'unknown'];
 
 /**
  * Parse the <chati-handoff> block from agent stdout.
  *
+ * Returns validation info alongside parsed data for integrity checking.
+ *
  * @param {string} output - Full stdout from the agent process
- * @returns {{ found: boolean, handoff: object|null, rawOutput: string }}
+ * @returns {{ found: boolean, handoff: object|null, rawOutput: string, valid: boolean, warnings: string[] }}
  */
 export function parseAgentOutput(output) {
   if (!output || typeof output !== 'string') {
-    return { found: false, handoff: null, rawOutput: '' };
+    return { found: false, handoff: null, rawOutput: '', valid: false, warnings: ['No output provided'] };
   }
 
   const match = output.match(/<chati-handoff>([\s\S]*?)<\/chati-handoff>/);
   if (!match) {
-    return { found: false, handoff: null, rawOutput: output };
+    return { found: false, handoff: null, rawOutput: output, valid: false, warnings: ['No handoff block found'] };
   }
 
   const content = match[1].trim();
   const handoff = parseHandoffFields(content);
 
-  return { found: true, handoff, rawOutput: output };
+  // Validate the parsed handoff
+  const { valid, warnings } = validateHandoff(handoff);
+
+  return { found: true, handoff, rawOutput: output, valid, warnings };
+}
+
+/**
+ * Validate a parsed handoff against the schema and business rules.
+ *
+ * @param {object} handoff
+ * @returns {{ valid: boolean, warnings: string[] }}
+ */
+export function validateHandoff(handoff) {
+  const warnings = [];
+
+  if (!handoff) {
+    return { valid: false, warnings: ['Handoff is null'] };
+  }
+
+  // Schema validation
+  const schemaResult = validateSchema(handoff, HANDOFF_SCHEMA);
+  warnings.push(...schemaResult.errors, ...schemaResult.warnings);
+
+  // Business rule: status must be a valid value
+  if (handoff.status && !VALID_STATUSES.includes(handoff.status)) {
+    warnings.push(`Invalid status "${handoff.status}" — expected one of: ${VALID_STATUSES.join(', ')}`);
+  }
+
+  // Business rule: score must be 0-100
+  if (handoff.score !== null && handoff.score !== undefined) {
+    if (typeof handoff.score !== 'number' || handoff.score < 0 || handoff.score > 100) {
+      warnings.push(`Score ${handoff.score} is out of range 0-100`);
+    }
+  }
+
+  // A handoff is valid if there are no errors (warnings are OK)
+  const hasErrors = schemaResult.errors.length > 0 ||
+    (handoff.status && !VALID_STATUSES.includes(handoff.status));
+
+  return { valid: !hasErrors, warnings };
 }
 
 /**
@@ -52,6 +103,8 @@ function parseHandoffFields(content) {
     decisions: {},
     blockers: [],
     needs_input_question: null,
+    provider: null,
+    model: null,
   };
 
   const lines = content.split('\n');
@@ -119,6 +172,10 @@ function parseHandoffFields(content) {
         result.summary = value || '';
       } else if (key === 'needs_input_question') {
         result.needs_input_question = value === 'null' || value === '' ? null : value;
+      } else if (key === 'provider') {
+        result.provider = value || null;
+      } else if (key === 'model') {
+        result.model = value || null;
       }
     }
   }

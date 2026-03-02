@@ -3,23 +3,13 @@ import { readFileSync } from 'fs';
 import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { logBanner } from '../utils/logger.js';
-import { stepLanguage, stepProjectType, stepLlmProvider, stepConfirmation } from './questions.js';
+import { stepLanguage, stepProjectType, stepIDESelection, stepProviderSelection, stepEditorSelection, stepPrimaryProvider, stepConfirmation, stepTelemetryConsent } from './questions.js';
 import { createSpinner, showStep, showValidation, showQuickStart } from './feedback.js';
 import { installFramework } from '../installer/core.js';
 import { validateInstallation } from '../installer/validator.js';
 import { t } from './i18n.js';
 import { DEFAULT_MCPS } from '../config/mcp-configs.js';
-import { IDE_CONFIGS } from '../config/ide-configs.js';
-
-/**
- * Map LLM provider to its primary IDE.
- * Each provider maps to its own standalone IDE — no cross-contamination.
- */
-const PROVIDER_TO_IDE = {
-  claude: ['claude-code'],
-  gemini: ['gemini-cli'],
-  codex: ['codex-cli'],
-};
+import { IDE_CONFIGS, IDE_TO_PROVIDER } from '../config/ide-configs.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const VERSION = JSON.parse(readFileSync(join(__dirname, '..', '..', 'package.json'), 'utf-8')).version;
@@ -46,11 +36,25 @@ export async function runWizard(targetDir, options = {}) {
   // Step 2: Project Type
   const projectType = options.projectType || await stepProjectType(targetDir);
 
-  // Step 3: LLM Provider
-  const llmProvider = options.llmProvider || await stepLlmProvider();
+  // Step 3a: Provider Selection (which AI providers to use)
+  const selectedProviders = options.providers || await stepProviderSelection();
 
-  // Map provider to its standalone IDE(s)
-  const selectedIDEs = options.ides || PROVIDER_TO_IDE[llmProvider] || ['claude-code'];
+  // Step 3b: Primary provider (only if multiple)
+  const primaryProvider = options.llmProvider || await stepPrimaryProvider(selectedProviders);
+
+  // Step 3c: Editor Selection (which editor IDEs get rules files)
+  const selectedEditors = options.editors || await stepEditorSelection();
+
+  // Combine providers + editors into selectedIDEs for backward compatibility
+  const providerToIDE = { claude: 'claude-code', gemini: 'gemini-cli', codex: 'codex-cli' };
+  const selectedIDEs = options.ides || [
+    ...selectedProviders.map(p => providerToIDE[p]).filter(Boolean),
+    ...selectedEditors,
+  ];
+
+  // CLI providers derived from selected providers
+  const cliProviders = selectedProviders;
+
   const selectedMCPs = options.mcps || DEFAULT_MCPS;
 
   // Step 4: Confirmation
@@ -59,7 +63,8 @@ export async function runWizard(targetDir, options = {}) {
     projectName,
     projectType,
     language,
-    llmProvider,
+    llmProvider: primaryProvider,
+    allProviders: cliProviders,
     selectedIDEs,
     selectedMCPs,
     targetDir,
@@ -68,8 +73,12 @@ export async function runWizard(targetDir, options = {}) {
 
   await stepConfirmation(config);
 
+  // Step 5: Telemetry Consent (opt-in)
+  const telemetryEnabled = options.telemetry !== undefined ? options.telemetry : await stepTelemetryConsent();
+  config.telemetryEnabled = telemetryEnabled;
+
   // Step 5: Installation + Validation
-  const primaryIDE = selectedIDEs[selectedIDEs.length - 1];
+  const primaryIDE = selectedIDEs.find(ide => IDE_TO_PROVIDER[ide] === primaryProvider) || selectedIDEs[0];
   const primaryIDEName = IDE_CONFIGS[primaryIDE]?.name || primaryIDE;
 
   console.log();
@@ -97,9 +106,15 @@ export async function runWizard(targetDir, options = {}) {
     if (selectedIDEs.includes('claude-code')) {
       showStep(t('installer.created_claude_md'));
     }
+    if (cliProviders.length > 1) {
+      showStep(t('installer.created_overlays'));
+    }
     showStep(t('installer.created_memories'));
     showStep(t('installer.installed_intelligence'));
     showStep(`${t('installer.configured_mcps')} ${selectedMCPs.join(', ')}`);
+    if (telemetryEnabled) {
+      showStep('Telemetry: enabled (anonymous, opt-in)');
+    }
 
     // Validation
     console.log();
@@ -133,11 +148,18 @@ export async function runWizard(targetDir, options = {}) {
       'codex-cli': '$chati',
     };
     const invokeCmd = invokeCmdMap[primaryIDE] || '/chati';
-    showQuickStart(t('installer.quick_start_title'), [
+    const quickStartSteps = [
       `${t('installer.quick_start_1')} (${primaryIDEName})`,
       `Type: ${invokeCmd}`,
       t('installer.quick_start_3'),
-    ]);
+    ];
+
+    // Add switch hint if multiple CLI providers configured
+    if (cliProviders.length > 1) {
+      quickStartSteps.push(t('installer.quick_start_switch_hint'));
+    }
+
+    showQuickStart(t('installer.quick_start_title'), quickStartSteps);
 
     return { success: true, config, validation };
   } catch (err) {

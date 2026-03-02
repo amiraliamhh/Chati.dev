@@ -9,6 +9,7 @@ import {
   classifyIntent,
   getIntentPhase,
   checkModeAlignment,
+  detectStandardFlow,
 } from '../../src/orchestrator/intent-classifier.js';
 
 describe('intent-classifier', () => {
@@ -162,6 +163,70 @@ describe('intent-classifier', () => {
       const result = checkModeAlignment(INTENT_TYPES.DEPLOY, 'discover');
       assert.equal(result.needsChange, true);
       assert.equal(result.targetMode, 'deploy');
+    });
+  });
+
+  describe('STANDARD_FLOW intent type', () => {
+    it('should have STANDARD_FLOW in INTENT_TYPES', () => {
+      assert.equal(INTENT_TYPES.STANDARD_FLOW, 'standard_flow');
+    });
+
+    it('should map STANDARD_FLOW to discover phase', () => {
+      assert.equal(getIntentPhase(INTENT_TYPES.STANDARD_FLOW), 'discover');
+    });
+
+    it('should classify standard flow keywords', () => {
+      const result = classifyIntent('I need a standard flow for this medium project with a new feature and integration');
+      assert.ok(result.confidence > 0);
+    });
+  });
+
+  describe('detectStandardFlow', () => {
+    it('should detect standard flow trigger keywords', () => {
+      // Needs enough signals: trigger keyword + moderate length + requirement count
+      const result = detectStandardFlow(
+        'I need a standard flow for this medium project. Add user authentication and also profile management.',
+        { hasExistingCodebase: true }
+      );
+      assert.equal(result.isStandardFlow, true);
+      assert.ok(result.confidence >= 0.8);
+    });
+
+    it('should disqualify quick fix messages', () => {
+      const result = detectStandardFlow('quick fix for the login bug');
+      assert.equal(result.isStandardFlow, false);
+      assert.ok(result.reason.includes('Disqualified'));
+    });
+
+    it('should disqualify enterprise messages', () => {
+      const result = detectStandardFlow('enterprise compliance audit system');
+      assert.equal(result.isStandardFlow, false);
+    });
+
+    it('should boost brownfield context', () => {
+      const withContext = detectStandardFlow(
+        'I need a new feature and also an integration module',
+        { hasExistingCodebase: true }
+      );
+      const withoutContext = detectStandardFlow(
+        'I need a new feature and also an integration module',
+        {}
+      );
+      assert.ok(withContext.confidence >= withoutContext.confidence);
+    });
+
+    it('should not detect for very short messages', () => {
+      const result = detectStandardFlow('fix button');
+      assert.equal(result.isStandardFlow, false);
+    });
+
+    it('should detect moderate requirement count (2-5)', () => {
+      const result = detectStandardFlow(
+        'Build a new feature for user profiles. Add avatar upload. Also integrate with the notification service. Plus add email preferences.',
+        { isGreenfield: false }
+      );
+      // Should have decent confidence due to requirement count + brownfield
+      assert.ok(result.confidence > 0);
     });
   });
 });

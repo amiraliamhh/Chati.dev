@@ -153,7 +153,7 @@ Criteria (binary pass/fail):
 8. No placeholders ([TODO], [TBD]) in output
 
 Score = criteria met / total criteria
-Threshold: >= 95% (7/8 minimum)
+Threshold: >= 85% (7/8 minimum)
 If below: internal refinement loop (max 3x)
 ```
 
@@ -393,7 +393,7 @@ Post-conditions:
 9. No placeholders ([TODO], [TBD]) in output
 10. Test coverage measured and documented with percentage
 
-Score threshold: 95%
+> These are supplementary enforcement dimensions validated during self-validation (Protocol 5.1). The authoritative threshold is defined above.
 
 ---
 

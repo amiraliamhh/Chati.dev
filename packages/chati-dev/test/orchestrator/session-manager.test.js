@@ -1,8 +1,10 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'fs';
+import { mkdtempSync, mkdirSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { writeFileSync } from 'fs';
+import yaml from 'js-yaml';
 import {
   initSession,
   loadSession,
@@ -11,6 +13,7 @@ import {
   recordAgentCompletion,
   getSessionSummary,
   validateSession,
+  migrateSession,
 } from '../../src/orchestrator/session-manager.js';
 
 describe('session-manager', () => {
@@ -303,6 +306,74 @@ describe('session-manager', () => {
       assert.equal(result.valid, false);
       assert.ok(result.reason.includes('Invalid mode'));
 
+      rmSync(testDir, { recursive: true, force: true });
+    });
+  });
+
+  describe('migrateSession', () => {
+    it('should migrate legacy session (no schema_version) to 1.0', () => {
+      const result = migrateSession({ version: '1.0', mode: 'discover', language: 'en' });
+      assert.equal(result.migrated, true);
+      assert.equal(result.fromVersion, null);
+      assert.equal(result.toVersion, '1.0');
+    });
+
+    it('should NOT migrate session that already has schema_version 1.0', () => {
+      const result = migrateSession({ schema_version: '1.0', version: '1.0', mode: 'discover' });
+      assert.equal(result.migrated, false);
+      assert.equal(result.fromVersion, '1.0');
+    });
+
+    it('should ensure completed_agents and agent_results exist after migration', () => {
+      const session = { version: '1.0', mode: 'build' };
+      migrateSession(session);
+      assert.ok(Array.isArray(session.completed_agents));
+      assert.ok(typeof session.agent_results === 'object');
+      assert.ok(Array.isArray(session.deviations));
+      assert.ok(Array.isArray(session.mode_transitions));
+    });
+
+    it('should handle null input gracefully', () => {
+      const result = migrateSession(null);
+      assert.equal(result.migrated, false);
+    });
+  });
+
+  describe('loadSession with migration', () => {
+    it('should migrate legacy file on load', () => {
+      const testDir = mkdtempSync(join(tmpdir(), 'migrate-load-'));
+      mkdirSync(join(testDir, '.chati'), { recursive: true });
+
+      // Write a legacy session without schema_version
+      const legacy = { version: '1.0', mode: 'discover', language: 'en', project_type: 'greenfield', agents: {} };
+      writeFileSync(join(testDir, '.chati', 'session.yaml'), yaml.dump(legacy), 'utf-8');
+
+      const result = loadSession(testDir);
+      assert.equal(result.loaded, true);
+      assert.equal(result.migrated, true);
+      assert.equal(result.session.schema_version, '1.0');
+
+      rmSync(testDir, { recursive: true, force: true });
+    });
+
+    it('should NOT re-migrate current version file', () => {
+      const testDir = mkdtempSync(join(tmpdir(), 'migrate-no-'));
+      initSession(testDir);
+
+      const result = loadSession(testDir);
+      assert.equal(result.loaded, true);
+      assert.equal(result.migrated, false);
+      assert.equal(result.session.schema_version, '1.0');
+
+      rmSync(testDir, { recursive: true, force: true });
+    });
+  });
+
+  describe('initSession with schema_version', () => {
+    it('should create session with schema_version field', () => {
+      const testDir = mkdtempSync(join(tmpdir(), 'init-schema-'));
+      const result = initSession(testDir);
+      assert.equal(result.session.schema_version, '1.0');
       rmSync(testDir, { recursive: true, force: true });
     });
   });

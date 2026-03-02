@@ -133,7 +133,7 @@ Criteria (binary pass/fail):
 10. No placeholders ([TODO], [TBD]) in output
 
 Score = criteria met / total criteria
-Threshold: >= 95% (9/10 minimum)
+Threshold: >= 90% (9/10 minimum)
 ```
 
 ---
@@ -336,7 +336,7 @@ Beyond self-validation (Protocol 5.1), the Architect agent enforces:
 | Failure Scenario | Recovery Action |
 |-----------------|-----------------|
 | PRD artifact missing or unreadable | Halt activation. Log error to session. Prompt user to re-run Detail agent or provide PRD manually. |
-| Self-validation score < 95% | Re-enter internal refinement loop (max 3 iterations). If still below threshold, present specific gaps to user for resolution. |
+| Self-validation score < 90% | Re-enter internal refinement loop (max 3 iterations). If still below threshold, present specific gaps to user for resolution. |
 | User rejects architecture decisions | Capture rejection reasons. Return to the relevant Step (2 for stack, 3 for design, 4 for data). Do not restart from Step 1 unless user requests it. |
 | context7 MCP unavailable | Continue without library documentation lookup. Note in architecture document that library compatibility was not verified via documentation. Use best available knowledge. |
 | Tech stack conflict with existing codebase (brownfield) | Document the conflict explicitly. Present migration options with effort estimates. Let user decide between adapting requirements or planning migration. |

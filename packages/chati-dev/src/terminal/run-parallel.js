@@ -20,6 +20,7 @@ import { spawnParallelGroup } from './spawner.js';
 import { TerminalMonitor } from './monitor.js';
 import { collectResults, mergeHandoffs, buildConsolidatedHandoff } from './collector.js';
 import { parseAgentOutput } from './handoff-parser.js';
+import { estimateTokens, COST_PER_1K } from './cost-tracker.js';
 
 // ---------------------------------------------------------------------------
 // CLI argument parsing
@@ -100,12 +101,14 @@ async function main() {
         projectDir,
         previousAgent,
         sessionState,
+        provider: args.provider || null,
       });
 
       configs.push({
         agent: agents[i],
         taskId: taskIds[i],
         model: promptResult.model,
+        provider: promptResult.provider,
         prompt: promptResult.prompt,
         workingDir: projectDir,
         timeout,
@@ -149,6 +152,23 @@ async function main() {
   });
 
   const elapsed = Date.now() - startTime;
+
+  // Cost estimation per agent
+  const costEstimates = configs.map((cfg, i) => {
+    const terminal = group.terminals[i];
+    const inputTokens = estimateTokens(cfg.prompt || '');
+    const outputTokens = estimateTokens((terminal?.stdout || []).join(''));
+    const modelKey = cfg.model || 'sonnet';
+    const rate = COST_PER_1K[modelKey] || COST_PER_1K.sonnet || 0.015;
+    return {
+      agent: cfg.agent,
+      model: modelKey,
+      provider: cfg.provider || 'claude',
+      inputTokens,
+      outputTokens,
+      estimatedCost: ((inputTokens + outputTokens) / 1000) * rate,
+    };
+  });
 
   // Collect and merge results
   const rawResults = collectResults(group.groupId, group.terminals);
@@ -197,6 +217,7 @@ async function main() {
       parallelActual: elapsed,
       timeSaved: elapsed * (agents.length - 1),
     },
+    costEstimate: costEstimates,
   };
 
   process.stdout.write(JSON.stringify(output, null, 2) + '\n');
@@ -213,7 +234,7 @@ async function main() {
  * GROUP 2 (dev tasks) → qa-implementation
  */
 function determineNextAgent(agents) {
-  const groupKey = agents.sort().join(',');
+  const groupKey = [...agents].sort().join(',');
   if (groupKey.includes('architect') && groupKey.includes('detail') && groupKey.includes('ux')) {
     return 'phases';
   }

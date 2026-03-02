@@ -162,3 +162,54 @@ describe('getCurrentLanguage', () => {
     loadLanguage('en');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Provider/Editor separation (Item 7)
+// ---------------------------------------------------------------------------
+
+describe('FALLBACK_EN provider/editor keys', () => {
+  before(() => {
+    loadLanguage('en');
+  });
+
+  it('has provider_selection_title key', () => {
+    const result = t('installer.provider_selection_title');
+    assert.ok(result.includes('provider'), `Expected "provider" in: "${result}"`);
+    assert.notEqual(result, 'installer.provider_selection_title'); // not a missing key fallback
+  });
+
+  it('has editor_selection_title key', () => {
+    const result = t('installer.editor_selection_title');
+    assert.ok(result.includes('editor') || result.includes('IDE'), `Expected "editor" or "IDE" in: "${result}"`);
+    assert.notEqual(result, 'installer.editor_selection_title');
+  });
+});
+
+describe('wizard questions exports', () => {
+  it('exports stepProviderSelection', async () => {
+    const mod = await import('../../src/wizard/questions.js');
+    assert.equal(typeof mod.stepProviderSelection, 'function');
+  });
+
+  it('exports stepEditorSelection', async () => {
+    const mod = await import('../../src/wizard/questions.js');
+    assert.equal(typeof mod.stepEditorSelection, 'function');
+  });
+
+  it('still exports stepIDESelection (backward compat)', async () => {
+    const mod = await import('../../src/wizard/questions.js');
+    assert.equal(typeof mod.stepIDESelection, 'function');
+  });
+});
+
+describe('IDE_CONFIGS group validation', () => {
+  it('all IDE groups are cli or editor', async () => {
+    const { IDE_CONFIGS: configs } = await import('../../src/config/ide-configs.js');
+    for (const [key, config] of Object.entries(configs)) {
+      assert.ok(
+        config.group === 'cli' || config.group === 'editor',
+        `IDE "${key}" has unexpected group: "${config.group}"`
+      );
+    }
+  });
+});

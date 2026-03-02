@@ -1,8 +1,8 @@
 # chati.dev Configuration
-version: "3.2.5"
+version: "3.3.0"
 installed_at: "2026-02-07T10:00:00Z"
-updated_at: "2026-02-20T00:00:00Z"
-installer_version: "3.2.5"
+updated_at: "2026-03-02T00:00:00Z"
+installer_version: "3.3.0"
 project_type: greenfield
 language: en
 ides: [claude-code]
@@ -21,5 +21,9 @@ providers:
 
 # Per-agent provider/model overrides (optional — inherits from AGENT_MODELS default)
 # agent_overrides:
-#   dev: { provider: gemini, model: pro }
-#   brownfield-wu: { provider: gemini, model: pro }
+#   dev:
+#     provider: gemini
+#     model: pro
+#   brownfield-wu:
+#     provider: gemini
+#     model: pro

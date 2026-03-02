@@ -1,11 +1,12 @@
 import { mkdirSync, writeFileSync, copyFileSync, existsSync, readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { IDE_CONFIGS } from '../config/ide-configs.js';
+import { IDE_CONFIGS, IDE_TO_PROVIDER } from '../config/ide-configs.js';
 import { generateClaudeMCPConfig } from '../config/mcp-configs.js';
 import { generateSessionYaml, generateConfigYaml, generateClaudeMd, generateClaudeLocalMd, generateCodexSkill, generateGeminiRouter, generateGeminiSessionLock, generateAgentsOverrideMd, generateCodexConstitutionGuardRules, generateCodexReadProtectionRules } from './templates.js';
 import { generateContextFiles } from '../config/context-file-generator.js';
 import { adaptFrameworkFile, ADAPTABLE_FILES } from '../config/framework-adapter.js';
+import { generateProviderOverlays } from './provider-overlay.js';
 import { verifyManifest } from './manifest.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -20,7 +21,7 @@ const FRAMEWORK_SOURCE = existsSync(BUNDLED_SOURCE) ? BUNDLED_SOURCE : MONOREPO_
  * Install Chati.dev framework into target directory
  */
 export async function installFramework(config) {
-  const { targetDir, projectType, language, selectedIDEs, selectedMCPs, projectName, version, llmProvider } = config;
+  const { targetDir, projectType, language, selectedIDEs, selectedMCPs, projectName, version, llmProvider, allProviders } = config;
 
   // 0. Verify framework signature (supply chain protection)
   const manifestPath = join(FRAMEWORK_SOURCE, 'manifest.json');
@@ -40,7 +41,7 @@ export async function installFramework(config) {
   createDir(join(targetDir, '.chati'));
   writeFileSync(
     join(targetDir, '.chati', 'session.yaml'),
-    generateSessionYaml({ projectName, projectType, language, selectedIDEs, selectedMCPs, llmProvider }),
+    generateSessionYaml({ projectName, projectType, language, selectedIDEs, selectedMCPs, llmProvider, allProviders }),
     'utf-8'
   );
 
@@ -58,7 +59,7 @@ export async function installFramework(config) {
     'i18n', 'migrations', 'data', 'context',
     'artifacts/0-WU', 'artifacts/1-Brief', 'artifacts/2-PRD',
     'artifacts/3-Architecture', 'artifacts/4-UX', 'artifacts/5-Phases',
-    'artifacts/6-Tasks', 'artifacts/7-QA-Planning', 'artifacts/8-Validation',
+    'artifacts/6-Tasks', 'artifacts/7-QA-Planning', 'artifacts/9-QA-Implementation', 'artifacts/10-Deploy',
     'artifacts/handoffs', 'artifacts/decisions',
   ];
 
@@ -90,16 +91,27 @@ export async function installFramework(config) {
   // Copy framework files from source (adapted for non-Claude providers)
   copyFrameworkFiles(frameworkDir, llmProvider || 'claude');
 
+  // Generate provider overlays for secondary CLI providers
+  if (allProviders && allProviders.length > 1) {
+    generateProviderOverlays(targetDir, FRAMEWORK_SOURCE, llmProvider || 'claude', allProviders);
+  }
+
   // Write config.yaml
   writeFileSync(
     join(frameworkDir, 'config.yaml'),
-    generateConfigYaml({ version, projectType, language, selectedIDEs, llmProvider }),
+    generateConfigYaml({ version, projectType, language, selectedIDEs, llmProvider, allProviders }),
     'utf-8'
   );
 
-  // 3. Configure IDEs
+  // 3. Configure IDEs (secondary providers get overlay orchestrator path)
+  const primary = llmProvider || 'claude';
   for (const ideKey of selectedIDEs) {
-    await configureIDE(targetDir, ideKey, selectedMCPs);
+    const ideProvider = IDE_TO_PROVIDER[ideKey];
+    const isSecondary = ideProvider && ideProvider !== primary && allProviders && allProviders.length > 1;
+    const orchestratorPath = isSecondary
+      ? `chati.dev/.adapted/${ideProvider}/orchestrator/chati.md`
+      : 'chati.dev/orchestrator/chati.md';
+    await configureIDE(targetDir, ideKey, selectedMCPs, { orchestratorPath, isSecondary, providerName: ideProvider });
   }
 
   const hasClaude = selectedIDEs.includes('claude-code');
@@ -261,7 +273,8 @@ function copyFrameworkFiles(destDir, provider = 'claude') {
 /**
  * Configure a specific IDE
  */
-async function configureIDE(targetDir, ideKey, selectedMCPs) {
+async function configureIDE(targetDir, ideKey, selectedMCPs, options = {}) {
+  const { orchestratorPath, isSecondary } = options;
   const config = IDE_CONFIGS[ideKey];
   if (!config) return;
 
@@ -290,7 +303,7 @@ If session.yaml does not exist or has no language field, default to English.
 
 ## Load
 
-Read and execute the full orchestrator at \`chati.dev/orchestrator/chati.md\`.
+Read and execute the full orchestrator at \`${orchestratorPath || 'chati.dev/orchestrator/chati.md'}\`.
 
 Pass through all context: session state, handoffs, artifacts, and user input.
 
@@ -316,7 +329,7 @@ Pass through all context: session state, handoffs, artifacts, and user input.
   } else if (ideKey === 'codex-cli') {
     // Codex CLI: chati skill via .agents/skills/chati/SKILL.md (invoke with $chati)
     createDir(join(targetDir, '.agents', 'skills', 'chati'));
-    writeFileSync(join(targetDir, '.agents', 'skills', 'chati', 'SKILL.md'), generateCodexSkill(), 'utf-8');
+    writeFileSync(join(targetDir, '.agents', 'skills', 'chati', 'SKILL.md'), generateCodexSkill({ orchestratorPath }), 'utf-8');
 
     // Session lock override file (equivalent to CLAUDE.local.md)
     writeFileSync(join(targetDir, 'AGENTS.override.md'), generateAgentsOverrideMd(), 'utf-8');
@@ -327,7 +340,7 @@ Pass through all context: session state, handoffs, artifacts, and user input.
     writeFileSync(join(targetDir, '.codex', 'rules', 'read-protection.rules'), generateCodexReadProtectionRules(), 'utf-8');
   } else if (ideKey === 'gemini-cli') {
     // Gemini CLI: TOML command file (native format for /chati command)
-    writeFileSync(join(targetDir, '.gemini', 'commands', 'chati.toml'), generateGeminiRouter(), 'utf-8');
+    writeFileSync(join(targetDir, '.gemini', 'commands', 'chati.toml'), generateGeminiRouter({ orchestratorPath }), 'utf-8');
 
     // Context files via @import (equivalent to .claude/rules/chati/)
     const geminiContextDir = join(targetDir, '.gemini', 'context');

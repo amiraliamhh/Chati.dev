@@ -8,6 +8,7 @@ import {
   PIPELINE_PHASES,
   AGENT_STATUS,
   initPipeline,
+  initStandardFlowPipeline,
   advancePipeline,
   checkPhaseTransition,
   getPipelineProgress,
@@ -537,6 +538,56 @@ describe('pipeline-manager', () => {
         () => confirmPreview(state, 'invalid'),
         /Invalid preview decision/,
       );
+    });
+  });
+
+  describe('initStandardFlowPipeline', () => {
+    it('should initialize with 8 agents', () => {
+      const state = initStandardFlowPipeline();
+      const agentNames = Object.keys(state.agents);
+      assert.equal(agentNames.length, 8);
+    });
+
+    it('should include the correct 8 agents', () => {
+      const state = initStandardFlowPipeline();
+      const expected = [
+        'brief', 'detail', 'architect', 'tasks',
+        'qa-planning', 'dev', 'qa-implementation', 'devops',
+      ];
+      for (const name of expected) {
+        assert.ok(state.agents[name], `Missing agent: ${name}`);
+      }
+    });
+
+    it('should NOT include WU, UX, or Phases agents', () => {
+      const state = initStandardFlowPipeline();
+      assert.equal(state.agents['greenfield-wu'], undefined);
+      assert.equal(state.agents['brownfield-wu'], undefined);
+      assert.equal(state.agents['ux'], undefined);
+      assert.equal(state.agents['phases'], undefined);
+    });
+
+    it('should set isStandardFlow flag', () => {
+      const state = initStandardFlowPipeline();
+      assert.equal(state.isStandardFlow, true);
+    });
+
+    it('should initialize all agents as pending', () => {
+      const state = initStandardFlowPipeline();
+      for (const agentState of Object.values(state.agents)) {
+        assert.equal(agentState.status, AGENT_STATUS.PENDING);
+        assert.equal(agentState.score, null);
+      }
+    });
+
+    it('should default to discover phase', () => {
+      const state = initStandardFlowPipeline();
+      assert.equal(state.phase, 'discover');
+    });
+
+    it('should accept custom mode', () => {
+      const state = initStandardFlowPipeline({ mode: 'plan' });
+      assert.equal(state.phase, 'plan');
     });
   });
 });

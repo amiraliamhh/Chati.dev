@@ -49,16 +49,37 @@ Before starting extraction, select elicitation methods from the library:
 
 ```
 Reference: chati.dev/patterns/elicitation-library.yaml
+Programmatic: src/intelligence/elicitation.js — selectTechniques(context, topN=3)
 
-Auto-selection based on context:
-  IF greenfield + vibecoder -> brain-dump, moscow, persona-building, playback
-  IF greenfield + power_user -> constraint-mapping, decision-matrix, pre-mortem
-  IF brownfield -> gap-analysis, constraint-mapping, event-storming-lite
-  IF many requirements (>20) -> add moscow, impact-effort-matrix
-  IF multiple stakeholders (>3) -> add stakeholder-map, six-thinking-hats
+15 Available Techniques:
+  open-ended, closed, scaling, five-whys, scenario,
+  constraint, analogy, day-in-life, persona, exception,
+  moscow, prototype, acceptance, edge-case, stakeholder-map
 
-Primary methods for Brief: brain-dump, five-whys, moscow, stakeholder-map, playback
-Secondary methods (use when needed): scamper, competitor-teardown, persona-building
+Auto-selection by context (powered by selectTechniques):
+  Phase-aware: discover → open-ended, analogy, persona, stakeholder-map
+               plan    → constraint, moscow, scaling, five-whys
+               build   → acceptance, edge-case, exception, prototype
+               deploy  → closed, acceptance, scaling
+
+  Project-type boost:
+    greenfield → open-ended, analogy (+2 score)
+    brownfield → acceptance, constraint (+2 score)
+
+  User-level adaptation:
+    beginner → open-ended, scenario, analogy (simpler techniques)
+    expert   → five-whys, constraint, stakeholder-map (advanced techniques)
+
+  Keyword matching: context keywords boost relevant techniques automatically
+
+Legacy method mapping (for reference):
+  brain-dump          → open-ended
+  deep-dive           → five-whys + scenario
+  constraint-mapping  → constraint + scaling
+  decision-matrix     → moscow + scaling
+  stakeholder-map     → stakeholder-map
+  gap-analysis        → exception + edge-case
+  event-storming-lite → scenario + day-in-life
 
 Adapt method depth to user level:
   Vibecoder: More open-discovery, explain why each question matters, use examples
@@ -69,15 +90,26 @@ Adapt method depth to user level:
 ```
 Purpose: Get everything out of the user's head without filtering
 
-Prompts:
+IMPORTANT — Check for initial_context FIRST:
+  IF session.yaml contains initial_context (from /chati <prompt> inline input):
+    1. Treat initial_context as the PRIMARY brain dump input
+    2. Parse it for: vision, problems, users, constraints, references
+    3. Acknowledge what was captured: "From your initial description, I captured: {summary}"
+    4. ONLY ask follow-up questions for gaps NOT covered in the initial input
+    5. Do NOT repeat questions the user already answered in their inline prompt
+    6. Preserve the user's original vocabulary and terminology in the brief
+  ELSE:
+    Proceed with standard prompts below
+
+Prompts (used when no initial_context exists, or for gaps):
 - "Tell me everything about what you want to build. What's the vision?"
 - "Who has this problem? How big is it?"
 - "What happens if we don't build this?"
 - "Any references, competitors, or inspirations?"
 
 Technique: Open Discovery (see elicitation-library.yaml -> brain-dump)
-Duration: 10-15 min
-Output: Raw, unfiltered user input captured
+Duration: 10-15 min (shorter if initial_context provided)
+Output: Raw, unfiltered user input captured (initial_context + any follow-up answers)
 ```
 
 ### Phase 2: QA (Structured Analysis)
@@ -136,6 +168,36 @@ Technique: Confirmation -> Deep Dive (if corrections needed)
 Duration: 5-10 min
 ```
 
+### Phase 4b: Coverage Checkpoint
+```
+Purpose: Verify all key areas were discussed before compiling the final brief
+
+Actions:
+1. Evaluate which categories have been covered vs missing
+2. Present coverage status to user:
+
+   "Before I compile the final brief, let me verify we covered everything:
+
+    [✓/✗] Core problem and desired outcomes
+    [✓/✗] Target users and their pain points
+    [✓/✗] Constraints (budget, timeline, team, tech)
+    [✓/✗] References and competitors
+    [✓/✗] What we're NOT building (negative scope)
+    [✓/✗] Dependencies and integrations
+    [✓/✗] Non-code assets (images, sprites, icons, fonts, audio, video — if applicable)
+
+    Anything important we haven't discussed yet?"
+
+3. If user adds new information:
+   → Loop back to Phase 2 (QA) for that specific topic ONLY
+   → Then return to this checkpoint
+4. If user confirms coverage is complete:
+   → Proceed to Phase 5
+
+Technique: Confirmation
+Duration: 2-3 min
+```
+
 ### Phase 5: Compilation (Approval)
 ```
 Purpose: Produce the formal Brief document for user approval
@@ -169,7 +231,7 @@ Criteria (binary pass/fail):
 9. No placeholders ([TODO], [TBD]) in output
 
 Score = criteria met / total criteria
-Threshold: >= 95% (8/9 minimum)
+Threshold: >= 85% (8/9 minimum)
 If below: internal refinement loop (max 3x)
 ```
 
@@ -405,7 +467,7 @@ Post-conditions:
 9. User has explicitly approved the brief before handoff
 10. No placeholders ([TODO], [TBD]) in output
 
-Score threshold: 95%
+> These are supplementary enforcement dimensions validated during self-validation (Protocol 5.1). The authoritative threshold is defined above.
 
 ---
 

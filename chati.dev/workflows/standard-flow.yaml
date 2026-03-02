@@ -1,0 +1,171 @@
+# Standard Flow Workflow
+# Mid-tier pipeline for moderate tasks: new features, integrations, brownfield enhancements
+# Uses 8 agents — between Quick Flow (4) and Full Flow (12)
+
+workflow:
+  id: standard-flow
+  name: Standard Flow — Balanced Development
+  version: "1.0.0"
+  type: any
+  project_types: [feature, integration, enhancement, module, component, brownfield-moderate]
+  description: >
+    Balanced pipeline for moderate complexity tasks that need proper planning
+    but not the full 12-agent pipeline. Skips WU (assumes existing codebase
+    context), UX (no design-heavy work), and Phases (tasks agent handles
+    scope directly). Ideal for 2-5 requirements in brownfield projects.
+
+detection:
+  triggers:
+    - "Moderate complexity feature with 2-5 requirements"
+    - "Brownfield project enhancement or integration"
+    - "New module or component within existing architecture"
+    - "User explicitly requests standard flow"
+    - "Feature that needs architecture review but not full UX design"
+    - "API integration or service connection"
+    - "Database-backed feature with clear data model"
+  disqualifiers:
+    - "Quick fix, hotfix, or single-line change (use Quick Flow)"
+    - "Enterprise-scale project with compliance requirements (use Full Flow)"
+    - "Greenfield project requiring full discovery (use Full Flow)"
+    - "UX-heavy feature requiring design system work (use Full Flow)"
+    - "Multi-service architecture changes (use Full Flow)"
+    - "User explicitly requests full pipeline"
+
+  confidence_threshold: 0.8
+  user_confirmation: true
+
+agents:
+  included:
+    - brief
+    - detail
+    - architect
+    - tasks
+    - qa-planning
+    - dev
+    - qa-implementation
+    - devops
+  excluded:
+    - greenfield-wu
+    - brownfield-wu
+    - ux
+    - phases
+
+phases:
+  - phase: 0
+    name: Discovery
+    category: DISCOVER
+    sequence:
+      - agent: brief
+        action: extract-requirements
+        creates: [chati.dev/artifacts/1-Brief/brief.md]
+        notes: >
+          Full brief extraction (5 phases). Since no WU precedes it,
+          Brief must also capture codebase context from user input.
+        config:
+          max_rounds: 5
+          require_approval: true
+
+  - phase: 1
+    name: Planning
+    category: PLAN
+    sequence:
+      - agent: detail
+        action: expand-requirements
+        creates: [chati.dev/artifacts/2-Detail/prd.md]
+        notes: "Full PRD from brief output"
+        parallel_with: [architect]
+
+      - agent: architect
+        action: design-architecture
+        creates: [chati.dev/artifacts/3-Architecture/architecture.md]
+        notes: "Architecture decisions, no UX constraints needed"
+        parallel_with: [detail]
+
+      - agent: tasks
+        action: create-tasks
+        creates: [chati.dev/artifacts/5-Tasks/tasks.md]
+        notes: >
+          Tasks agent works directly from PRD + Architecture.
+          No phases agent — tasks agent determines task breakdown directly.
+
+      - agent: qa-planning
+        action: validate-plan
+        creates: [chati.dev/artifacts/6-QA-Planning/qa-planning-report.md]
+        notes: "Full QA-Planning validation. Score >= 95% required to advance."
+        config:
+          minimum_score: 95
+
+  - phase: 2
+    name: Implementation
+    category: BUILD
+    sequence:
+      - agent: dev
+        action: implement-tasks
+        notes: "Dev works from full PRD + architecture + tasks"
+
+      - agent: qa-implementation
+        action: validate-code
+        creates: [chati.dev/artifacts/9-QA-Implementation/qa-implementation-report.md]
+        notes: >
+          Full QA-Implementation validation. Score >= 95% required.
+          Adversarial review mandatory.
+        config:
+          adversarial_review: true
+          minimum_findings: 5
+          minimum_score: 95
+
+  - phase: 3
+    name: Deployment
+    category: DEPLOY
+    sequence:
+      - agent: devops
+        action: deploy
+        creates: [chati.dev/artifacts/10-Deploy/deploy-report.md]
+        notes: "Standard deployment process"
+
+transitions:
+  discover_to_plan:
+    trigger: "brief.status == completed"
+    type: automatic
+    action: "Advance to PLAN phase"
+  plan_to_build:
+    trigger: "qa-planning.score >= 95"
+    type: automatic
+    action: "Advance to BUILD phase"
+  build_to_validate:
+    trigger: "dev.status == completed"
+    type: automatic
+    action: "Run QA-Implementation"
+  validate_to_deploy:
+    trigger: "qa-implementation.score >= 95"
+    type: user_preview
+    action: "User preview gate, then advance to DEPLOY"
+  deploy_to_completed:
+    trigger: "devops.status == completed"
+    type: automatic
+    action: "Pipeline complete"
+
+escalation:
+  to_full_flow:
+    triggers:
+      - "Architect discovers multi-service complexity"
+      - "QA-Planning finds UX requirements not addressed"
+      - "Scope creep: more than 5 distinct requirements discovered"
+      - "User requests full pipeline"
+    action: >
+      Pause standard-flow, notify user:
+      "This task is more complex than the standard flow can handle.
+      Options:
+      1. Switch to full pipeline (Recommended)
+      2. Continue with standard flow (document gaps)
+      3. Reduce scope and continue"
+  to_quick_flow:
+    triggers:
+      - "Detail agent finds only 1 simple requirement"
+      - "Architect confirms no architecture changes needed"
+    action: >
+      Suggest downgrade:
+      "This task might be simpler than expected.
+      Options:
+      1. Switch to quick flow (faster)
+      2. Continue with standard flow"

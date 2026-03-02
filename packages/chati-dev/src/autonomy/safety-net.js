@@ -28,6 +28,17 @@ const CRITICAL_RISK_KEYWORDS = [
   'database drop',
   'rm -rf',
   'delete all',
+  'credential',
+  'password',
+  'secret',
+  'token',
+  'privilege escalation',
+  'RCE',
+  'XSS',
+  'CSRF',
+  'SQL injection',
+  'command injection',
+  'backdoor',
 ];
 
 /**
@@ -111,13 +122,20 @@ export function getRecommendedAction(triggers) {
   }
 
   // Check for critical severity
-  const hasCritical = triggers.some(t => t.severity === 'critical');
+  const criticalTriggers = triggers.filter(t => t.severity === 'critical');
 
-  if (hasCritical) {
-    const criticalTriggers = triggers.filter(t => t.severity === 'critical');
+  if (criticalTriggers.length >= 2) {
+    return {
+      action: 'abort',
+      reason: `Multiple critical safety conditions: ${criticalTriggers.map(t => t.details).join('; ')}`,
+      resumable: false,
+    };
+  }
+
+  if (criticalTriggers.length === 1) {
     return {
       action: 'pause',
-      reason: `Critical safety conditions: ${criticalTriggers.map(t => t.details).join('; ')}`,
+      reason: `Critical safety condition: ${criticalTriggers[0].details}`,
       resumable: true,
     };
   }
@@ -308,7 +326,7 @@ export function buildSafetyReport(state) {
     message = 'All safety checks passed. Pipeline can continue.';
   } else {
     const action = getRecommendedAction(result.triggers);
-    status = action.action === 'pause' ? 'unsafe' : 'warning';
+    status = (action.action === 'pause' || action.action === 'abort') ? 'unsafe' : 'warning';
     message = action.reason;
   }
 

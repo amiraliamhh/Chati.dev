@@ -129,7 +129,7 @@ Criteria (binary pass/fail):
 10. No placeholders ([TODO], [TBD]) in output
 
 Score = criteria met / total criteria
-Threshold: >= 95% (9/10 minimum)
+Threshold: >= 90% (9/10 minimum)
 ```
 
 ---
@@ -259,7 +259,7 @@ On explicit `*help` request, display:
 | *help        | Show this table           | --                |
 +--------------+---------------------------+-------------------+
 
-Progress: Phase {current} of 6 -- {percentage}%
+Progress: Phase {current} of 4 -- {percentage}%
 Recommendation: continue the conversation naturally,
    I know what to do next.
 ```
@@ -346,7 +346,7 @@ Beyond self-validation (Protocol 5.1), the Detail agent enforces:
 | Failure Scenario | Recovery Action |
 |-----------------|-----------------|
 | Brief artifact missing or unreadable | Halt activation. Log error to session. Prompt user to re-run Brief agent or provide Brief manually. |
-| Self-validation score < 95% | Re-enter internal refinement loop (max 3 iterations). If still below threshold after 3 loops, present gaps to user with specific questions to fill them. |
+| Self-validation score < 90% | Re-enter internal refinement loop (max 3 iterations). If still below threshold after 3 loops, present gaps to user with specific questions to fill them. |
 | User rejects PRD | Capture rejection reasons. Return to the relevant Step (2 for structure, 3 for validation). Do not restart from Step 1 unless user requests it. |
 | Session state corrupted | Read artifacts directly from filesystem. Reconstruct minimal context from Brief artifact. Log warning. |
 | Market research fails (exa MCP) | Skip gracefully. Note in PRD that market research was not performed. Continue with user-provided information only. |

@@ -12,6 +12,19 @@ import { validateWriteScopes, buildIsolationEnv } from './isolation.js';
 import { getProvider } from './cli-registry.js';
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** Default maximum concurrent processes when spawning in parallel. */
+export const DEFAULT_CONCURRENCY = 3;
+
+/** Patterns that indicate a transient failure (worth retrying). */
+export const TRANSIENT_PATTERNS = [
+  /rate limit/i, /too many requests/i, /429/, /503/,
+  /timeout/i, /ECONNRESET/, /ECONNREFUSED/,
+];
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -150,6 +163,7 @@ export function buildSpawnCommand(config) {
   // Resolve CLI provider — defaults to claude for backwards compatibility
   const providerName = config.provider || 'claude';
   let command, args, prompt;
+  let providerFallback = null;
 
   try {
     const provider = getProvider(providerName);
@@ -159,6 +173,12 @@ export function buildSpawnCommand(config) {
     prompt = adapterResult.stdinPrompt;
   } catch (err) {
     // Fallback to claude if provider resolution fails (backwards compatibility)
+    providerFallback = {
+      requested: providerName,
+      actual: 'claude',
+      reason: err.message,
+      timestamp: new Date().toISOString(),
+    };
     console.error(`[chati] Provider "${providerName}" resolution failed: ${err.message}. Falling back to claude.`);
     command = 'claude';
     args = ['--print', '--dangerously-skip-permissions'];
@@ -170,7 +190,7 @@ export function buildSpawnCommand(config) {
     prompt = config.prompt || null;
   }
 
-  return { command, args, env, terminalId, prompt };
+  return { command, args, env, terminalId, prompt, providerFallback };
 }
 
 /**
@@ -180,7 +200,7 @@ export function buildSpawnCommand(config) {
  * @returns {TerminalHandle}
  */
 export function spawnTerminal(config) {
-  const { command, args, env, terminalId, prompt } = buildSpawnCommand(config);
+  const { command, args, env, terminalId, prompt, providerFallback } = buildSpawnCommand(config);
 
   const cwd = config.workingDir || process.cwd();
   const timeout = config.timeout || 300_000; // default 5 minutes
@@ -204,6 +224,8 @@ export function spawnTerminal(config) {
     agent: config.agent,
     taskId: config.taskId,
     model: config.model || 'unknown',
+    provider: config.provider || 'claude',
+    providerFallback,
     startedAt: new Date().toISOString(),
     status: 'running',
     exitCode: null,
@@ -286,6 +308,96 @@ export function spawnParallelGroup(configs) {
 }
 
 /**
+ * Spawn a group of terminals with concurrency control (pool pattern).
+ *
+ * Unlike `spawnParallelGroup` which launches all at once, this function
+ * limits the number of simultaneously running processes. When one process
+ * exits, the next in the queue is spawned.
+ *
+ * @param {SpawnConfig[]} configs
+ * @param {{ maxConcurrency?: number }} [options={}]
+ * @returns {Promise<{ groupId: string, terminals: TerminalHandle[], startedAt: string }>}
+ * @throws {Error} When write scope conflicts are detected
+ */
+export async function spawnParallelGroupAsync(configs, options = {}) {
+  if (!Array.isArray(configs) || configs.length === 0) {
+    throw new Error('spawnParallelGroupAsync requires a non-empty array of configs');
+  }
+
+  const maxConcurrency = options.maxConcurrency || DEFAULT_CONCURRENCY;
+
+  const validation = validateWriteScopes(configs);
+  if (!validation.valid) {
+    const details = validation.conflicts
+      .map(c => `${c.agents.join(' vs ')} on ${c.path}`)
+      .join('; ');
+    throw new Error(`Write scope conflicts detected: ${details}`);
+  }
+
+  const groupId = `group-${Date.now()}`;
+  const startedAt = new Date().toISOString();
+
+  // If within concurrency limit, spawn all at once (fast path)
+  if (configs.length <= maxConcurrency) {
+    const terminals = configs.map(cfg => spawnTerminal(cfg));
+    return { groupId, terminals, startedAt };
+  }
+
+  // Pool pattern: spawn up to maxConcurrency, refill as processes exit
+  const terminals = [];
+  const queue = [...configs];
+  const active = new Set();
+
+  /**
+   * Wait for a terminal to exit. Returns a Promise that resolves
+   * when the terminal's process emits 'exit'.
+   */
+  function waitForExit(handle) {
+    if (handle.status !== 'running') {
+      return Promise.resolve();
+    }
+    return new Promise(resolve => {
+      if (!handle.process) {
+        resolve();
+        return;
+      }
+      handle.process.once('exit', () => resolve());
+    });
+  }
+
+  // Fill initial pool
+  while (queue.length > 0 && active.size < maxConcurrency) {
+    const cfg = queue.shift();
+    const handle = spawnTerminal(cfg);
+    terminals.push(handle);
+    active.add(handle);
+  }
+
+  // Process remaining queue as slots free up
+  while (queue.length > 0) {
+    // Wait for ANY active process to exit
+    await Promise.race([...active].map(h => waitForExit(h)));
+
+    // Remove exited processes from active set
+    for (const h of active) {
+      if (h.status !== 'running') {
+        active.delete(h);
+      }
+    }
+
+    // Fill freed slots
+    while (queue.length > 0 && active.size < maxConcurrency) {
+      const cfg = queue.shift();
+      const handle = spawnTerminal(cfg);
+      terminals.push(handle);
+      active.add(handle);
+    }
+  }
+
+  return { groupId, terminals, startedAt };
+}
+
+/**
  * Gracefully kill a spawned terminal.
  * Sends SIGTERM first; if the process is still alive after 5 seconds,
  * escalates to SIGKILL.
@@ -336,7 +448,7 @@ export function killTerminal(handle) {
  */
 export function getTerminalStatus(handle) {
   if (!handle) {
-    return { id: 'unknown', agent: 'unknown', model: 'unknown', status: 'unknown', elapsed: 0, exitCode: null };
+    return { id: 'unknown', agent: 'unknown', model: 'unknown', provider: 'unknown', status: 'unknown', elapsed: 0, exitCode: null, providerFallback: null };
   }
 
   const elapsed = Date.now() - new Date(handle.startedAt).getTime();
@@ -345,8 +457,74 @@ export function getTerminalStatus(handle) {
     id: handle.id,
     agent: handle.agent,
     model: handle.model || 'unknown',
+    provider: handle.provider || 'unknown',
     status: handle.status,
     elapsed,
     exitCode: handle.exitCode,
+    providerFallback: handle.providerFallback || null,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Retry / Backoff
+// ---------------------------------------------------------------------------
+
+/**
+ * Determine whether a terminal failure is transient (worth retrying).
+ *
+ * @param {number} exitCode - Process exit code
+ * @param {string[]|string} stderr - Captured stderr output
+ * @returns {boolean}
+ */
+export function isTransientFailure(exitCode, stderr) {
+  if (exitCode === 0) return false;
+  const str = Array.isArray(stderr) ? stderr.join('') : (stderr || '');
+  return TRANSIENT_PATTERNS.some(p => p.test(str));
+}
+
+/**
+ * Spawn a terminal with automatic retry on transient failures.
+ *
+ * Wraps `spawnTerminal()` with exponential backoff.
+ * Non-transient failures are returned immediately without retry.
+ *
+ * @param {SpawnConfig} config
+ * @param {{ maxRetries?: number, baseDelay?: number, shouldRetry?: function }} [retryOptions={}]
+ * @returns {Promise<TerminalHandle>}
+ */
+export async function spawnTerminalWithRetry(config, retryOptions = {}) {
+  const maxRetries = retryOptions.maxRetries ?? 2;
+  const baseDelay = retryOptions.baseDelay ?? 2000;
+  const shouldRetry = retryOptions.shouldRetry || isTransientFailure;
+
+  let lastHandle = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const handle = spawnTerminal(config);
+    lastHandle = handle;
+
+    // Wait for process to exit
+    await new Promise((resolve) => {
+      if (!handle.process) { resolve(); return; }
+      if (handle.status !== 'running') { resolve(); return; }
+      handle.process.once('exit', () => resolve());
+    });
+
+    // Success — return immediately
+    if (handle.exitCode === 0) {
+      return handle;
+    }
+
+    // Check if failure is transient and retries remain
+    if (attempt < maxRetries && shouldRetry(handle.exitCode, handle.stderr)) {
+      const delay = baseDelay * Math.pow(2, attempt);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      continue;
+    }
+
+    // Non-transient or out of retries — return as-is
+    return handle;
+  }
+
+  return lastHandle;
 }

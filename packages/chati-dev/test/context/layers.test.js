@@ -192,6 +192,148 @@ rules:
   });
 });
 
+// ---------------------------------------------------------------------------
+// Edge cases & malformed input
+// ---------------------------------------------------------------------------
+
+describe('L0 Edge Cases', () => {
+  it('handles malformed YAML in constitution domain', () => {
+    const badDir = mkdtempSync(join(tmpdir(), 'l0-bad-'));
+    writeFileSync(join(badDir, 'constitution.yaml'), '{{invalid yaml: [');
+    const result = processL0({ domainsDir: badDir });
+    assert.equal(result.layer, 'L0');
+    assert.deepEqual(result.rules, []);
+    rmSync(badDir, { recursive: true, force: true });
+  });
+
+  it('handles empty domain file', () => {
+    const emptyDir = mkdtempSync(join(tmpdir(), 'l0-empty-'));
+    writeFileSync(join(emptyDir, 'constitution.yaml'), '');
+    const result = processL0({ domainsDir: emptyDir });
+    assert.equal(result.layer, 'L0');
+    assert.deepEqual(result.rules, []);
+    rmSync(emptyDir, { recursive: true, force: true });
+  });
+});
+
+describe('L1 Edge Cases', () => {
+  it('returns default bracketBehavior for undefined bracket', () => {
+    const tmpL1 = mkdtempSync(join(tmpdir(), 'l1-crit-'));
+    writeFileSync(join(tmpL1, 'global.yaml'), 'rules:\n  - id: g1\n    text: "Rule"\nbrackets:\n  FRESH:\n    behavior: "Full"\n');
+    const result = processL1({ domainsDir: tmpL1, mode: 'discover', bracket: 'CRITICAL' });
+    assert.equal(result.layer, 'L1');
+    assert.equal(result.bracketBehavior, 'normal');
+    rmSync(tmpL1, { recursive: true, force: true });
+  });
+
+  it('maps unknown mode to planning governance', () => {
+    const tmpL1 = mkdtempSync(join(tmpdir(), 'l1-unk-'));
+    writeFileSync(join(tmpL1, 'global.yaml'), 'rules: []\nmodes:\n  planning:\n    writeScope: "chati.dev/"\n');
+    const result = processL1({ domainsDir: tmpL1, mode: 'unknown-mode', bracket: 'FRESH' });
+    assert.equal(result.modeRules.writeScope, 'chati.dev/');
+    rmSync(tmpL1, { recursive: true, force: true });
+  });
+
+  it('handles domain without modes block', () => {
+    const noModesDir = mkdtempSync(join(tmpdir(), 'l1-nomodes-'));
+    writeFileSync(join(noModesDir, 'global.yaml'), 'rules:\n  - id: g1\n    text: "Rule"\n');
+    const result = processL1({ domainsDir: noModesDir, mode: 'build', bracket: 'FRESH' });
+    assert.equal(result.layer, 'L1');
+    assert.equal(result.modeRules.writeScope, 'chati.dev/');
+    rmSync(noModesDir, { recursive: true, force: true });
+  });
+
+  it('handles domain without brackets block', () => {
+    const noBracketsDir = mkdtempSync(join(tmpdir(), 'l1-nobrackets-'));
+    writeFileSync(join(noBracketsDir, 'global.yaml'), 'rules:\n  - id: g1\n    text: "Rule"\n');
+    const result = processL1({ domainsDir: noBracketsDir, mode: 'discover', bracket: 'FRESH' });
+    assert.equal(result.bracketBehavior, 'normal');
+    rmSync(noBracketsDir, { recursive: true, force: true });
+  });
+});
+
+describe('L2 Edge Cases', () => {
+  it('handles malformed YAML in agent domain', () => {
+    const badDir = mkdtempSync(join(tmpdir(), 'l2-bad-'));
+    mkdirSync(join(badDir, 'agents'), { recursive: true });
+    writeFileSync(join(badDir, 'agents', 'broken.yaml'), '{{not valid yaml');
+    const result = processL2({ domainsDir: badDir, agent: 'broken' });
+    assert.equal(result.layer, 'L2');
+    assert.equal(result.agent, 'broken');
+    assert.deepEqual(result.rules, []);
+    rmSync(badDir, { recursive: true, force: true });
+  });
+
+  it('handles agent with minimal domain (only rules, no authority/mission)', () => {
+    const minDir = mkdtempSync(join(tmpdir(), 'l2-min-'));
+    mkdirSync(join(minDir, 'agents'), { recursive: true });
+    writeFileSync(join(minDir, 'agents', 'minimal.yaml'), 'rules:\n  - id: m1\n    text: "Only rule"\n');
+    const result = processL2({ domainsDir: minDir, agent: 'minimal' });
+    assert.equal(result.mission, '');
+    assert.deepEqual(result.authority.exclusive, []);
+    assert.deepEqual(result.outputs, []);
+    assert.equal(result.rules.length, 1);
+    rmSync(minDir, { recursive: true, force: true });
+  });
+});
+
+describe('L3 Edge Cases', () => {
+  it('handles pipelinePosition not found in steps', () => {
+    const tmpL3 = mkdtempSync(join(tmpdir(), 'l3-notfound-'));
+    mkdirSync(join(tmpL3, 'workflows'), { recursive: true });
+    writeFileSync(join(tmpL3, 'workflows', 'test-wf.yaml'), 'steps:\n  - wu\n  - brief\n  - detail\nrules: []\n');
+    const result = processL3({
+      domainsDir: tmpL3,
+      workflow: 'test-wf',
+      pipelinePosition: 'nonexistent-step',
+    });
+    assert.equal(result.pipelineContext.currentStep, 'nonexistent-step');
+    assert.equal(result.pipelineContext.progress, 0);
+    assert.equal(result.pipelineContext.previousStep, null);
+    rmSync(tmpL3, { recursive: true, force: true });
+  });
+
+  it('handles workflow with empty steps', () => {
+    const emptyWfDir = mkdtempSync(join(tmpdir(), 'l3-empty-'));
+    mkdirSync(join(emptyWfDir, 'workflows'), { recursive: true });
+    writeFileSync(join(emptyWfDir, 'workflows', 'empty-wf.yaml'), 'steps: []\nrules: []\n');
+    const result = processL3({
+      domainsDir: emptyWfDir,
+      workflow: 'empty-wf',
+      pipelinePosition: 'any',
+    });
+    assert.equal(result.pipelineContext.totalSteps, 0);
+    assert.equal(result.pipelineContext.progress, 0);
+    rmSync(emptyWfDir, { recursive: true, force: true });
+  });
+});
+
+describe('L4 Edge Cases', () => {
+  it('passes through all populated fields correctly', () => {
+    const result = processL4({
+      taskId: 'full-task',
+      handoff: { source: 'architect', score: 98, outputs: ['design.md'] },
+      artifacts: ['prd.md', 'design.md'],
+      taskCriteria: ['Criterion A', 'Criterion B', 'Criterion C'],
+    });
+    assert.equal(result.taskId, 'full-task');
+    assert.equal(result.handoff.source, 'architect');
+    assert.equal(result.handoff.score, 98);
+    assert.deepEqual(result.artifacts, ['prd.md', 'design.md']);
+    assert.deepEqual(result.criteria, ['Criterion A', 'Criterion B', 'Criterion C']);
+  });
+
+  it('handles partial fields (only handoff)', () => {
+    const result = processL4({
+      handoff: { source: 'brief', score: 90 },
+    });
+    assert.equal(result.taskId, null);
+    assert.equal(result.handoff.source, 'brief');
+    assert.deepEqual(result.artifacts, []);
+    assert.deepEqual(result.criteria, []);
+  });
+});
+
 describe('Domain Loader', () => {
   it('loads valid YAML file', () => {
     const tmpFile = join(tmpdir(), `test-domain-${Date.now()}.yaml`);

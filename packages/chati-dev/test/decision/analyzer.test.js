@@ -10,7 +10,8 @@ import yaml from 'js-yaml';
 import {
   analyzeImpact,
   buildDependencyGraph,
-  getTransitiveDependents
+  getTransitiveDependents,
+  scoreDecision,
 } from '../../src/decision/analyzer.js';
 
 const TEST_DIR = join(import.meta.dirname, '../../tmp/test-analyzer');
@@ -213,4 +214,115 @@ test('analyzeImpact - returns entity details', () => {
   });
 
   cleanupTestProject();
+});
+
+// ---------------------------------------------------------------------------
+// scoreDecision — TF-IDF scoring
+// ---------------------------------------------------------------------------
+
+test('scoreDecision - returns zero for null option', () => {
+  const result = scoreDecision(null);
+  assert.equal(result.score, 0);
+  assert.equal(result.alignment, 0);
+});
+
+test('scoreDecision - returns zero for option without name', () => {
+  const result = scoreDecision({});
+  assert.equal(result.score, 0);
+});
+
+test('scoreDecision - scores alignment with matching requirements', () => {
+  const option = {
+    name: 'REST API with authentication',
+    description: 'Build a REST API using Express with JWT authentication',
+    keywords: ['api', 'rest', 'auth', 'jwt'],
+  };
+  const context = {
+    requirements: [
+      'User authentication with JWT tokens',
+      'REST API endpoints for CRUD operations',
+      'Role-based access control',
+    ],
+  };
+
+  const result = scoreDecision(option, context);
+  assert.ok(result.alignment > 0, `Expected positive alignment, got ${result.alignment}`);
+  assert.ok(result.score > 0, `Expected positive score, got ${result.score}`);
+});
+
+test('scoreDecision - low alignment for non-matching option', () => {
+  const option = {
+    name: 'GraphQL with subscriptions',
+    description: 'Real-time GraphQL API with WebSocket subscriptions',
+    keywords: ['graphql', 'websocket', 'subscriptions'],
+  };
+  const context = {
+    requirements: [
+      'File upload service',
+      'Image compression pipeline',
+      'CDN integration',
+    ],
+  };
+
+  const result = scoreDecision(option, context);
+  // Should have lower alignment since keywords don't match
+  assert.ok(result.score <= 0.7, `Expected lower score for non-matching, got ${result.score}`);
+});
+
+test('scoreDecision - penalizes complexity', () => {
+  const simple = scoreDecision(
+    { name: 'Simple REST API', description: 'Monolithic REST API' },
+    { requirements: ['Build an API'] }
+  );
+  const complex = scoreDecision(
+    { name: 'Distributed microservice', description: 'Distributed multi-tenant microservice with real-time' },
+    { requirements: ['Build an API'] }
+  );
+
+  assert.ok(simple.complexity >= complex.complexity,
+    `Simple (${simple.complexity}) should have higher complexity score than complex (${complex.complexity})`);
+});
+
+test('scoreDecision - rewards reuse with existing entities', () => {
+  const option = {
+    name: 'Extend user service',
+    description: 'Add profile features to existing user service',
+    keywords: ['user', 'service', 'profile'],
+  };
+  const context = {
+    requirements: ['Add user profiles'],
+    existingEntities: ['src/services/user-service.js', 'src/models/user.js'],
+  };
+
+  const result = scoreDecision(option, context);
+  assert.ok(result.reuse > 0, `Expected positive reuse score, got ${result.reuse}`);
+});
+
+test('scoreDecision - includes breakdown', () => {
+  const result = scoreDecision(
+    { name: 'Test option' },
+    { requirements: ['Test requirement'] }
+  );
+
+  assert.ok(result.breakdown);
+  assert.ok(result.breakdown.alignment);
+  assert.equal(result.breakdown.alignment.weight, 0.4);
+  assert.equal(result.breakdown.complexity.weight, 0.2);
+  assert.equal(result.breakdown.reuse.weight, 0.25);
+  assert.equal(result.breakdown.constraints.weight, 0.15);
+});
+
+test('scoreDecision - considers constraints', () => {
+  const option = {
+    name: 'PostgreSQL database with TypeScript ORM',
+    description: 'Use PostgreSQL with Prisma ORM in TypeScript',
+    keywords: ['postgresql', 'prisma', 'typescript'],
+  };
+  const context = {
+    requirements: ['Data persistence'],
+    constraints: ['Must use TypeScript', 'PostgreSQL required'],
+  };
+
+  const result = scoreDecision(option, context);
+  assert.ok(result.score > 0);
 });

@@ -1,7 +1,7 @@
 # Chati.dev System Context
 
 ## Framework
-- **Version**: 3.0.0
+- **Version**: 3.3.0
 - **Agents**: 13 (12 specialized + orchestrator)
 - **Constitution**: 19 Articles + Preamble
 - **Quality**: 5 pipeline gates + 3-tier verdicts (APPROVED / NEEDS_REVISION / BLOCKED)

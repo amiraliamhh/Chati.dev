@@ -22,6 +22,13 @@ const SENSITIVE_PATTERNS = [
   /^secrets\./,
   /\.key$/,
   /^\.git\/config$/,
+  /^\.npmrc$/,
+  /^id_rsa$/,
+  /^id_ed25519$/,
+  /^id_ecdsa$/,
+  /^\.pgpass$/,
+  /^\.docker\/config\.json$/,
+  /^\.kube\/config$/,
 ];
 
 const ALLOWED_EXCEPTIONS = [
@@ -94,8 +101,9 @@ async function main() {
     }
 
     process.stdout.write(JSON.stringify({ decision: 'allow' }));
-  } catch {
-    process.stdout.write(JSON.stringify({ decision: 'allow' }));
+  } catch (err) {
+    process.stderr.write(`[chati-hook-error] read-protection: ${err?.message || 'unknown'}\n`);
+    process.stdout.write(JSON.stringify({ decision: 'block', reason: 'Hook error — fail-closed for safety' }));
   }
 }
 

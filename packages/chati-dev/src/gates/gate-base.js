@@ -7,6 +7,7 @@
  */
 
 import { evaluateGate, getGateThreshold, resolveGateAction } from '../autonomy/autonomous-gate.js';
+import { track as telemetryTrack } from '../telemetry/collector.js';
 
 /**
  * Gate verdict constants (v3.0.0).
@@ -100,6 +101,14 @@ export class GateBase {
       const threshold = getGateThreshold(this.agent);
       const hasCriticalBlocker = warnings.some(w => w.toLowerCase().includes('critical'));
       const verdict = determineVerdict(gateResult.score, threshold, hasCriticalBlocker);
+
+      // Track telemetry
+      telemetryTrack('gate_evaluated', {
+        gate: this.id,
+        result: verdict,
+        score: gateResult.score,
+        blockers: warnings.filter(w => w.toLowerCase().includes('critical')),
+      });
 
       return {
         gateId: this.id,

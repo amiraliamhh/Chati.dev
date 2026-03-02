@@ -13,6 +13,9 @@ import { join } from 'path';
 import { runPrism } from '../context/engine.js';
 import { loadHandoff, formatHandoff } from '../tasks/handoff.js';
 import { getWriteScope } from './isolation.js';
+import { resolveOverlayPath } from '../installer/provider-overlay.js';
+import { resolveProviderForAgent } from './cli-registry.js';
+import { buildCompactGotchasSummary } from '../memory/gotchas-injector.js';
 
 // Import AGENT_MODELS from model-governance (safe — named export,
 // does not trigger main() which is guarded by fileURLToPath check).
@@ -46,6 +49,7 @@ export const AGENT_FILE_MAP = {
  * @property {object} [sessionState]  - Parsed session.yaml fields
  * @property {string[]} [writeScope]  - Override write scope
  * @property {string} [additionalContext] - Extra context (e.g. user answer to needs_input)
+ * @property {string} [provider] - Active CLI provider (for overlay resolution)
  */
 
 /**
@@ -70,8 +74,8 @@ export function buildAgentPrompt(config) {
     sections.push(prismResult.xml);
   }
 
-  // 2. Agent definition (.md file)
-  const agentDef = loadAgentDefinition(config.agent, config.projectDir);
+  // 2. Agent definition (.md file — resolved via overlay for secondary providers)
+  const agentDef = loadAgentDefinition(config.agent, config.projectDir, config.provider);
   if (agentDef) {
     sections.push('<!-- AGENT DEFINITION -->\n' + agentDef);
   }
@@ -82,7 +86,20 @@ export function buildAgentPrompt(config) {
     sections.push(handoffSection);
   }
 
-  // 4. Additional context (user input relay for needs_input)
+  // 4. Gotchas (relevant past errors)
+  try {
+    const gotchasSection = buildCompactGotchasSummary(config.projectDir, {
+      agent: config.agent,
+      task: config.taskId,
+    });
+    if (gotchasSection) {
+      sections.push('<!-- GOTCHAS -->\n' + gotchasSection);
+    }
+  } catch {
+    // Gotchas are advisory — never block prompt building
+  }
+
+  // 5. Additional context (user input relay for needs_input)
   if (config.additionalContext) {
     sections.push(
       '<!-- ADDITIONAL CONTEXT -->\n' +
@@ -91,23 +108,29 @@ export function buildAgentPrompt(config) {
     );
   }
 
-  // 5. Write scope instructions
+  // 6. Write scope instructions
   sections.push(buildWriteScopeSection(config));
 
-  // 6. Session context
-  sections.push(buildSessionSection(config));
+  // 7. Resolve provider/model (needed by session context AND output instructions)
+  const staticAssignment = AGENT_MODELS[config.agent] || { provider: 'claude', model: 'sonnet', tier: 'sonnet' };
+  const resolved = (config.projectDir && AGENT_MODELS[config.agent])
+    ? resolveProviderForAgent(config.agent, config.projectDir, AGENT_MODELS)
+    : { provider: staticAssignment.provider, model: staticAssignment.model };
+  const resolvedProvider = config.provider || resolved.provider || 'claude';
+  const model = config.model || resolved.model || staticAssignment.model || 'sonnet';
 
-  // 7. Output format instructions (handoff template)
-  sections.push(buildOutputInstructions());
+  // 8. Session context (uses resolved model/provider)
+  sections.push(buildSessionSection(config, { model, provider: resolvedProvider }));
+
+  // 9. Output format instructions (handoff template — includes provider/model for audit)
+  sections.push(buildOutputInstructions({ provider: resolvedProvider, model }));
 
   const prompt = sections.join('\n\n---\n\n');
-  const assignment = AGENT_MODELS[config.agent] || { provider: 'claude', model: 'sonnet', tier: 'sonnet' };
-  const model = assignment.model || assignment;
 
   return {
     prompt,
     model,
-    provider: assignment.provider || 'claude',
+    provider: resolvedProvider,
     metadata: {
       agent: config.agent,
       layers: prismResult.layerCount || 0,
@@ -163,14 +186,23 @@ function buildPrismSection(config) {
 
 /**
  * Load the agent's full .md definition file.
+ * For non-primary providers, resolves via overlay directory.
  */
-function loadAgentDefinition(agent, projectDir) {
+function loadAgentDefinition(agent, projectDir, provider = null) {
   const relativePath = AGENT_FILE_MAP[agent];
   if (!relativePath) return null;
 
-  const fullPath = join(projectDir, relativePath);
-  if (!existsSync(fullPath)) return null;
+  // Strip 'chati.dev/' prefix for overlay resolution
+  const relToFramework = relativePath.replace(/^chati\.dev\//, '');
 
+  let fullPath;
+  if (provider && provider !== 'claude') {
+    fullPath = resolveOverlayPath(projectDir, relToFramework, provider);
+  } else {
+    fullPath = join(projectDir, relativePath);
+  }
+
+  if (!existsSync(fullPath)) return null;
   return readFileSync(fullPath, 'utf-8');
 }
 
@@ -238,7 +270,7 @@ function buildWriteScopeSection(config) {
 /**
  * Build session context section.
  */
-function buildSessionSection(config) {
+function buildSessionSection(config, resolvedModelInfo = {}) {
   const state = config.sessionState || {};
   const project = state.project || {};
 
@@ -253,8 +285,8 @@ function buildSessionSection(config) {
     `- **User Level**: ${state.user_level || 'auto'}`,
     `- **Execution Mode**: ${state.execution_mode || 'autonomous'}`,
     `- **Your Agent**: ${config.agent}`,
-    `- **Your Model**: ${(AGENT_MODELS[config.agent]?.model) || 'sonnet'}`,
-    `- **Your Provider**: ${(AGENT_MODELS[config.agent]?.provider) || 'claude'}`,
+    `- **Your Model**: ${resolvedModelInfo.model || 'sonnet'}`,
+    `- **Your Provider**: ${resolvedModelInfo.provider || 'claude'}`,
   ];
 
   return lines.join('\n');
@@ -263,7 +295,10 @@ function buildSessionSection(config) {
 /**
  * Build output format instructions so the agent produces a parseable handoff.
  */
-function buildOutputInstructions() {
+function buildOutputInstructions(config) {
+  const providerValue = config?.provider || 'claude';
+  const modelValue = config?.model || 'unknown';
+
   return `<!-- OUTPUT INSTRUCTIONS -->
 ## Output Instructions (MANDATORY)
 
@@ -274,6 +309,8 @@ This block is how the orchestrator reads your results. Without it, your work can
 <chati-handoff>
 status: complete
 score: 95
+provider: ${providerValue}
+model: ${modelValue}
 summary: One to three sentence summary of what was accomplished.
 outputs:
   - path/to/artifact1.md
@@ -297,5 +334,6 @@ needs_input_question: null
 - The \`<chati-handoff>\` block MUST appear in your response
 - Score must be 0-100 (95+ to pass quality gate)
 - List ALL artifacts you created/modified in outputs
+- The \`provider\` and \`model\` fields MUST match: provider: ${providerValue}, model: ${modelValue}
 - If you need user input, set status to "needs_input" and write your question in needs_input_question`;
 }

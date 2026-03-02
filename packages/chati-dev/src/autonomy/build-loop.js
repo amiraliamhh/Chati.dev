@@ -25,6 +25,8 @@ import {
   CheckpointStatus,
   BuildStatus,
 } from './build-state.js';
+import { analyzeCause, buildRetryGuidance } from './cause-analyzer.js';
+import { shouldEscalate, getEscalationConfig, buildEscalationSummary } from './escalation.js';
 
 // ---------------------------------------------------------------------------
 // Build Loop
@@ -34,9 +36,10 @@ import {
  * @typedef {object} BuildLoopConfig
  * @property {string} projectDir - Project root directory
  * @property {string[]} taskIds - Task IDs to execute
- * @property {function(string): Promise<{success: boolean, output: string}>} executor - Task execution function
+ * @property {function(string, object?): Promise<{success: boolean, output: string}>} executor - Task execution function (taskId, options?)
  * @property {function(object): void} [onProgress] - Progress callback
  * @property {boolean} [resume=false] - Whether to resume from existing state
+ * @property {string} [model='sonnet'] - Current model tier for escalation
  */
 
 /**
@@ -64,7 +67,7 @@ import {
  * @returns {Promise<BuildLoopResult>}
  */
 export async function runBuildLoop(config) {
-  const { projectDir, taskIds, executor, onProgress, resume = false } = config;
+  const { projectDir, taskIds, executor, onProgress, resume = false, model = 'sonnet' } = config;
 
   // Load or create state
   let state = resume ? loadBuildState(projectDir) : null;
@@ -77,6 +80,10 @@ export async function runBuildLoop(config) {
   saveBuildState(projectDir, state);
 
   const startTime = Date.now();
+
+  // Per-task attempt history for cause analysis
+  /** @type {Map<string, Array<{category: string, output: string}>>} */
+  const attemptHistory = new Map();
 
   // Main loop
   while (true) {
@@ -115,6 +122,54 @@ export async function runBuildLoop(config) {
       continue;
     }
 
+    // --- Escalation check (before execution) ---
+    const previousAttempts = attemptHistory.get(checkpoint.taskId) || [];
+    let executorOptions = {};
+
+    if (checkpoint.attempts > 0 && checkpoint.error) {
+      // Analyze the cause of the previous failure
+      const analysis = analyzeCause(checkpoint.error, previousAttempts);
+      const escalation = shouldEscalate(checkpoint, analysis);
+
+      if (escalation.escalate) {
+        const escalationConfig = getEscalationConfig(escalation.newLevel, model);
+
+        // Update checkpoint with escalation level
+        state = updateCheckpoint(state, checkpoint.taskId, {
+          escalationLevel: escalation.newLevel,
+        });
+
+        if (onProgress) {
+          onProgress({
+            type: 'escalation',
+            taskId: checkpoint.taskId,
+            level: escalation.newLevel,
+            summary: buildEscalationSummary(escalation.newLevel, escalation.reason),
+          });
+        }
+
+        // Pause for human intervention at MAX level
+        if (escalationConfig.shouldPause) {
+          state = updateCheckpoint(state, checkpoint.taskId, {
+            status: CheckpointStatus.FAILED,
+            error: `Escalation MAX — paused for human intervention: ${escalation.reason}`,
+          });
+          saveBuildState(projectDir, state);
+
+          if (onProgress) {
+            onProgress({ type: 'escalation_pause', taskId: checkpoint.taskId, reason: escalation.reason });
+          }
+          continue;
+        }
+
+        // Build executor options with escalation context
+        executorOptions.modelOverride = escalationConfig.model;
+        if (escalationConfig.contextBoost) {
+          executorOptions.retryGuidance = buildRetryGuidance(analysis, checkpoint.attempts + 1);
+        }
+      }
+    }
+
     // Mark task as in progress
     state = updateCheckpoint(state, checkpoint.taskId, {
       status: CheckpointStatus.IN_PROGRESS,
@@ -130,32 +185,64 @@ export async function runBuildLoop(config) {
 
     // Execute task
     try {
-      const result = await executor(checkpoint.taskId);
+      const result = await executor(checkpoint.taskId, executorOptions);
 
       if (result.success) {
         state = updateCheckpoint(state, checkpoint.taskId, {
           status: CheckpointStatus.COMPLETED,
           output: result.output?.slice(0, 1000) || 'Completed',
           error: null,
+          escalationLevel: undefined, // Reset on success
         });
 
         if (onProgress) {
           onProgress({ type: 'task_completed', taskId: checkpoint.taskId });
         }
       } else {
+        // --- Self-critique: analyze failure cause ---
+        const failureOutput = result.output || 'Task failed';
+        const analysis = analyzeCause(failureOutput, previousAttempts);
+
+        // Record attempt in history
+        if (!attemptHistory.has(checkpoint.taskId)) {
+          attemptHistory.set(checkpoint.taskId, []);
+        }
+        attemptHistory.get(checkpoint.taskId).push({
+          category: analysis.category,
+          output: failureOutput.slice(0, 500),
+        });
+
         state = updateCheckpoint(state, checkpoint.taskId, {
           status: CheckpointStatus.IN_PROGRESS, // Will retry
-          error: result.output?.slice(0, 500) || 'Task failed',
+          error: failureOutput.slice(0, 500),
         });
 
         if (onProgress) {
-          onProgress({ type: 'task_failed', taskId: checkpoint.taskId, attempt: checkpoint.attempts + 1, error: result.output });
+          onProgress({
+            type: 'task_failed',
+            taskId: checkpoint.taskId,
+            attempt: checkpoint.attempts + 1,
+            error: failureOutput,
+            causeAnalysis: analysis,
+          });
         }
       }
     } catch (err) {
+      const errorMsg = err.message?.slice(0, 500) || 'Execution error';
+
+      // Record exception in history for cause analysis
+      const analysis = analyzeCause(errorMsg, previousAttempts);
+      if (!attemptHistory.has(checkpoint.taskId)) {
+        attemptHistory.set(checkpoint.taskId, []);
+      }
+      attemptHistory.get(checkpoint.taskId).push({
+        category: analysis.category,
+        output: errorMsg,
+      });
+
       state = updateCheckpoint(state, checkpoint.taskId, {
         status: CheckpointStatus.IN_PROGRESS, // Will retry
-        error: err.message?.slice(0, 500) || 'Execution error',
+        error: errorMsg,
       });
     }
 

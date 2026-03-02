@@ -1,6 +1,6 @@
 {
   "name": "chati-dev",
-  "version": "3.2.5",
+  "version": "3.3.0",
   "description": "AI-Powered Multi-Agent Orchestration System — Structured vibe coding for Full Stack Development",
   "type": "module",
   "bin": {
@@ -10,6 +10,7 @@
   "main": "src/wizard/index.js",
   "exports": {
     ".": "./src/wizard/index.js",
+    "./api": "./src/api/index.js",
     "./installer": "./src/installer/core.js",
     "./dashboard": "./src/dashboard/renderer.js",
     "./upgrade": "./src/upgrade/checker.js"
@@ -19,7 +20,8 @@
     "src/",
     "assets/",
     "framework/",
-    "scripts/"
+    "scripts/",
+    "LICENSE"
   ],
   "scripts": {
     "start": "node bin/chati.js",

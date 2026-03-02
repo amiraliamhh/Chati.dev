@@ -2,11 +2,15 @@ import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 
 const BRACKETS = [
-  { name: 'FRESH',    min: 60, max: 100, layers: ['L0', 'L1', 'L2', 'L3', 'L4'], budget: 2500 },
-  { name: 'MODERATE', min: 40, max: 60,  layers: ['L0', 'L1', 'L2', 'L3', 'L4'], budget: 2000 },
-  { name: 'DEPLETED', min: 25, max: 40,  layers: ['L0', 'L1', 'L2'],             budget: 1500 },
-  { name: 'CRITICAL', min: 0,  max: 25,  layers: ['L0', 'L1'],                   budget: 800 },
+  { name: 'FRESH',    min: 60, max: 100, layers: ['L0', 'L1', 'L2', 'L3', 'L4'], budget: 8000 },
+  { name: 'MODERATE', min: 40, max: 60,  layers: ['L0', 'L1', 'L2', 'L3'],       budget: 5000 },
+  { name: 'DEPLETED', min: 25, max: 40,  layers: ['L0', 'L1', 'L2'],             budget: 3000 },
+  { name: 'CRITICAL', min: 0,  max: 25,  layers: ['L0', 'L1'],                   budget: 1500 },
 ];
+// NOTE: This BRACKETS array is intentionally duplicated from src/context/bracket-tracker.js
+// for module isolation. bracket-tracker.js is the canonical source of truth.
+// If bracket ranges or budgets change, update BOTH files.
+// Format differs: here = array with `budget`, there = object with `tokenBudget`.
 
 /**
  * Get context status based on session state
@@ -40,7 +44,7 @@ export function getContextStatus(targetDir) {
 
   const bracket = BRACKETS.find(b => remainingPercent >= b.min && remainingPercent <= b.max) || BRACKETS[0];
 
-  const memoryLevels = { FRESH: 'none', MODERATE: 'metadata', DEPLETED: 'chunks', CRITICAL: 'full' };
+  const memoryLevels = { FRESH: 'full', MODERATE: 'chunks', DEPLETED: 'metadata', CRITICAL: 'none' };
 
   return {
     bracket: bracket.name,

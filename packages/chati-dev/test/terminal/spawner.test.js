@@ -12,6 +12,9 @@ import {
   getTerminalStatus,
   cleanParentEnv,
   _resetCounter,
+  DEFAULT_CONCURRENCY,
+  TRANSIENT_PATTERNS,
+  isTransientFailure,
 } from '../../src/terminal/spawner.js';
 
 describe('spawner', () => {
@@ -315,6 +318,152 @@ describe('spawner', () => {
       const cleaned = cleanParentEnv(env);
       assert.equal(cleaned.CLAUDE_CODE_SOME_FUTURE_FLAG, undefined);
       assert.equal(cleaned.CLAUDE_CODE_ANOTHER_SETTING, undefined);
+    });
+  });
+
+  describe('DEFAULT_CONCURRENCY', () => {
+    it('should be a positive integer', () => {
+      assert.equal(typeof DEFAULT_CONCURRENCY, 'number');
+      assert.ok(DEFAULT_CONCURRENCY > 0);
+      assert.equal(DEFAULT_CONCURRENCY, Math.floor(DEFAULT_CONCURRENCY));
+    });
+
+    it('should be 3 by default', () => {
+      assert.equal(DEFAULT_CONCURRENCY, 3);
+    });
+  });
+
+  describe('spawnParallelGroupAsync validation', () => {
+    it('should reject empty configs array', async () => {
+      const { spawnParallelGroupAsync } = await import('../../src/terminal/spawner.js');
+      await assert.rejects(
+        () => spawnParallelGroupAsync([]),
+        { message: /requires a non-empty array/ }
+      );
+    });
+
+    it('should reject non-array configs', async () => {
+      const { spawnParallelGroupAsync } = await import('../../src/terminal/spawner.js');
+      await assert.rejects(
+        () => spawnParallelGroupAsync(null),
+        { message: /requires a non-empty array/ }
+      );
+    });
+
+    it('should reject configs with write scope conflicts', async () => {
+      const { spawnParallelGroupAsync } = await import('../../src/terminal/spawner.js');
+      await assert.rejects(
+        () => spawnParallelGroupAsync([
+          { agent: 'dev', taskId: 't1' },
+          { agent: 'qa-implementation', taskId: 't2' },
+        ]),
+        { message: /Write scope conflicts/ }
+      );
+    });
+  });
+
+  describe('provider fallback audit trail', () => {
+    it('should return null providerFallback when provider resolves', () => {
+      const result = buildSpawnCommand({ agent: 'dev', taskId: 't1', provider: 'claude' });
+      assert.equal(result.providerFallback, null);
+    });
+
+    it('should return fallback metadata when provider fails', () => {
+      const result = buildSpawnCommand({ agent: 'dev', taskId: 't1', provider: 'nonexistent' });
+      assert.ok(result.providerFallback, 'Should have fallback metadata');
+      assert.equal(result.providerFallback.requested, 'nonexistent');
+      assert.equal(result.providerFallback.actual, 'claude');
+      assert.ok(result.providerFallback.reason);
+      assert.ok(result.providerFallback.timestamp);
+    });
+
+    it('should fallback to claude command when provider fails', () => {
+      const result = buildSpawnCommand({ agent: 'dev', taskId: 't1', provider: 'nonexistent' });
+      assert.equal(result.command, 'claude');
+    });
+  });
+
+  describe('getTerminalStatus with provider info', () => {
+    it('should include provider in status', () => {
+      const handle = {
+        id: 'test-p1',
+        agent: 'dev',
+        status: 'running',
+        provider: 'gemini',
+        startedAt: new Date().toISOString(),
+        exitCode: null,
+      };
+      const status = getTerminalStatus(handle);
+      assert.equal(status.provider, 'gemini');
+    });
+
+    it('should include providerFallback when present', () => {
+      const fallback = { requested: 'codex', actual: 'claude', reason: 'not found', timestamp: new Date().toISOString() };
+      const handle = {
+        id: 'test-p2',
+        agent: 'dev',
+        status: 'exited',
+        provider: 'codex',
+        providerFallback: fallback,
+        startedAt: new Date().toISOString(),
+        exitCode: 0,
+      };
+      const status = getTerminalStatus(handle);
+      assert.deepEqual(status.providerFallback, fallback);
+    });
+
+    it('should return null providerFallback for normal handles', () => {
+      const status = getTerminalStatus(null);
+      assert.equal(status.providerFallback, null);
+    });
+  });
+
+  describe('TRANSIENT_PATTERNS', () => {
+    it('should be an exported array', () => {
+      assert.ok(Array.isArray(TRANSIENT_PATTERNS));
+      assert.ok(TRANSIENT_PATTERNS.length > 0);
+    });
+
+    it('should contain rate limit and timeout patterns', () => {
+      const patterns = TRANSIENT_PATTERNS.map(p => p.source);
+      assert.ok(patterns.some(p => p.includes('rate limit') || p.includes('rate')));
+      assert.ok(patterns.some(p => p.includes('timeout') || p.includes('ECONNRESET')));
+    });
+  });
+
+  describe('isTransientFailure', () => {
+    it('should return true for "rate limit" in stderr', () => {
+      assert.equal(isTransientFailure(1, 'Error: rate limit exceeded'), true);
+    });
+
+    it('should return true for "429" in stderr', () => {
+      assert.equal(isTransientFailure(1, 'HTTP 429 Too Many Requests'), true);
+    });
+
+    it('should return true for "503" in stderr', () => {
+      assert.equal(isTransientFailure(1, 'HTTP 503 Service Unavailable'), true);
+    });
+
+    it('should return true for ECONNRESET in stderr', () => {
+      assert.equal(isTransientFailure(1, 'Error: read ECONNRESET'), true);
+    });
+
+    it('should return false for exit code 0', () => {
+      assert.equal(isTransientFailure(0, 'rate limit'), false);
+    });
+
+    it('should return false for non-transient error', () => {
+      assert.equal(isTransientFailure(1, 'Error: invalid argument --foo'), false);
+    });
+
+    it('should handle stderr as array of chunks', () => {
+      assert.equal(isTransientFailure(1, ['Error: ', 'rate limit', ' exceeded']), true);
+    });
+
+    it('should handle empty/null stderr gracefully', () => {
+      assert.equal(isTransientFailure(1, null), false);
+      assert.equal(isTransientFailure(1, ''), false);
+      assert.equal(isTransientFailure(1, []), false);
     });
   });
 });

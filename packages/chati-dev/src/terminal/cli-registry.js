@@ -113,7 +113,13 @@ export function getAllProviders() {
  */
 export function loadEnabledProviders(projectDir) {
   const { primary, enabled } = parseProviderConfig(projectDir);
-  return { primary, enabled };
+  const validNames = Object.keys(PROVIDERS);
+
+  // Filter out invalid provider names (typos in config.yaml)
+  const validEnabled = enabled.filter(name => validNames.includes(name));
+  const validPrimary = validNames.includes(primary) ? primary : 'claude';
+
+  return { primary: validPrimary, enabled: validEnabled };
 }
 
 /**

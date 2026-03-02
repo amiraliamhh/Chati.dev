@@ -1,7 +1,10 @@
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
+import yaml from 'js-yaml';
 import { hashFile } from './file-hasher.js';
 import { loadManifest } from './manifest.js';
+import { ADAPTABLE_FILES } from '../config/framework-adapter.js';
+import { validateSchema, CONFIG_SCHEMA } from '../utils/schema-validator.js';
 
 /**
  * Validate chati.dev installation
@@ -20,6 +23,7 @@ export async function validateInstallation(targetDir) {
     memories: { pass: false, details: [] },
     context: { pass: false, details: [] },
     integrity: { pass: false, details: [] },
+    config: { pass: false, details: [] },
     total: 0,
     passed: 0,
   };
@@ -170,6 +174,76 @@ export async function validateInstallation(targetDir) {
   results.context.details.push({ found: contextCount, expected: 4 });
   results.total += 1;
   if (results.context.pass) results.passed += 1;
+
+  // Check provider overlays (if multiple providers configured)
+  const configYamlPath = join(targetDir, 'chati.dev', 'config.yaml');
+  if (existsSync(configYamlPath)) {
+    try {
+      const configContent = readFileSync(configYamlPath, 'utf-8');
+      const enabledProviders = [];
+      let primaryProvider = null;
+      let currentProvider = null;
+
+      for (const line of configContent.split('\n')) {
+        const provLine = line.match(/^\s{4}(\w+):$/);
+        if (provLine && ['claude', 'gemini', 'codex'].includes(provLine[1])) {
+          currentProvider = provLine[1];
+        }
+        if (currentProvider && line.includes('enabled: true')) {
+          enabledProviders.push(currentProvider);
+        }
+        if (currentProvider && line.includes('primary: true')) {
+          primaryProvider = currentProvider;
+        }
+      }
+
+      // Validate overlay completeness for each secondary provider
+      if (enabledProviders.length > 1 && primaryProvider) {
+        const secondaryProviders = enabledProviders.filter(p => p !== primaryProvider);
+        const overlayDetails = [];
+
+        for (const provider of secondaryProviders) {
+          let present = 0;
+          let missing = 0;
+          const missingFiles = [];
+
+          for (const file of ADAPTABLE_FILES) {
+            const overlayPath = join(targetDir, 'chati.dev', '.adapted', provider, file);
+            if (existsSync(overlayPath)) {
+              present++;
+            } else {
+              missing++;
+              missingFiles.push(file);
+            }
+          }
+
+          overlayDetails.push({ provider, present, missing, missingFiles });
+        }
+
+        results.context.details.push({ overlays: overlayDetails });
+      }
+    } catch {
+      // Config parsing is best-effort for validation
+    }
+  }
+
+  // Check config.yaml schema validity
+  if (existsSync(configYamlPath)) {
+    try {
+      const configData = yaml.load(readFileSync(configYamlPath, 'utf-8'));
+      const configValidation = validateSchema(configData, CONFIG_SCHEMA);
+      results.config.pass = configValidation.valid;
+      results.config.details.push({
+        errors: configValidation.errors,
+        warnings: configValidation.warnings,
+      });
+    } catch (err) {
+      results.config.pass = false;
+      results.config.details.push({ error: `YAML parse error: ${err.message}` });
+    }
+  }
+  results.total += 1;
+  if (results.config.pass) results.passed += 1;
 
   // Check integrity: verify installed files match manifest hashes
   const manifest = loadManifest(targetDir);

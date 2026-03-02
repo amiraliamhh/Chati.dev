@@ -10,6 +10,8 @@
  *   HALF_OPEN — After reset timeout, allows a single test request
  */
 
+import { track as telemetryTrack } from '../telemetry/collector.js';
+
 export const CIRCUIT_STATES = {
   CLOSED: 'CLOSED',
   OPEN: 'OPEN',
@@ -61,6 +63,31 @@ export class CircuitBreaker {
     }
   }
 
+  /**
+   * Execute an async function through the circuit breaker.
+   * @param {Function} fn - Async function to execute
+   * @returns {Promise<*>} Result from fn
+   */
+  async executeAsync(fn) {
+    if (this._state === CIRCUIT_STATES.OPEN) {
+      const elapsed = Date.now() - (this._lastFailure || 0);
+      if (elapsed >= this.resetTimeout) {
+        this._state = CIRCUIT_STATES.HALF_OPEN;
+      } else {
+        throw new Error('Circuit breaker is OPEN. Request rejected.');
+      }
+    }
+
+    try {
+      const result = await fn();
+      this._onSuccess();
+      return result;
+    } catch (error) {
+      this._onFailure();
+      throw error;
+    }
+  }
+
   /** @private */
   _onSuccess() {
     this._successes++;
@@ -83,6 +110,11 @@ export class CircuitBreaker {
       this._state = CIRCUIT_STATES.OPEN;
     } else if (this._failures >= this.failureThreshold) {
       this._state = CIRCUIT_STATES.OPEN;
+      telemetryTrack('circuit_breaker_triggered', {
+        trigger: 'failure_threshold',
+        agent: 'unknown',
+        provider: 'unknown',
+      });
     }
   }
 

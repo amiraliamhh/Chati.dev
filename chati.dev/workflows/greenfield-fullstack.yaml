@@ -93,7 +93,7 @@ phases:
         notes: "Interactive or autonomous (Ralph Wiggum) mode"
       - agent: qa-implementation
         action: validate-code
-        creates: [chati.dev/artifacts/8-Validation/qa-implementation-report.md]
+        creates: [chati.dev/artifacts/9-QA-Implementation/qa-implementation-report.md]
         template: qa-gate-tmpl.yaml
         notes: "Tests + SAST + code review. Must pass to deploy"
 
@@ -103,7 +103,7 @@ phases:
     sequence:
       - agent: devops
         action: deploy
-        creates: [chati.dev/artifacts/8-Validation/deploy-report.md]
+        creates: [chati.dev/artifacts/10-Deploy/deploy-report.md]
         notes: "Git operations, deployment, documentation"
 
 transitions:

@@ -49,16 +49,37 @@ Before starting extraction, select elicitation methods from the library:
 
 ```
 Reference: chati.dev/patterns/elicitation-library.yaml
+Programmatic: src/intelligence/elicitation.js — selectTechniques(context, topN=3)
 
-Auto-selection based on context:
-  IF greenfield + vibecoder -> brain-dump, moscow, persona-building, playback
-  IF greenfield + power_user -> constraint-mapping, decision-matrix, pre-mortem
-  IF brownfield -> gap-analysis, constraint-mapping, event-storming-lite
-  IF many requirements (>20) -> add moscow, impact-effort-matrix
-  IF multiple stakeholders (>3) -> add stakeholder-map, six-thinking-hats
+15 Available Techniques:
+  open-ended, closed, scaling, five-whys, scenario,
+  constraint, analogy, day-in-life, persona, exception,
+  moscow, prototype, acceptance, edge-case, stakeholder-map
 
-Primary methods for Brief: brain-dump, five-whys, moscow, stakeholder-map, playback
-Secondary methods (use when needed): scamper, competitor-teardown, persona-building
+Auto-selection by context (powered by selectTechniques):
+  Phase-aware: discover → open-ended, analogy, persona, stakeholder-map
+               plan    → constraint, moscow, scaling, five-whys
+               build   → acceptance, edge-case, exception, prototype
+               deploy  → closed, acceptance, scaling
+
+  Project-type boost:
+    greenfield → open-ended, analogy (+2 score)
+    brownfield → acceptance, constraint (+2 score)
+
+  User-level adaptation:
+    beginner → open-ended, scenario, analogy (simpler techniques)
+    expert   → five-whys, constraint, stakeholder-map (advanced techniques)
+
+  Keyword matching: context keywords boost relevant techniques automatically
+
+Legacy method mapping (for reference):
+  brain-dump          → open-ended
+  deep-dive           → five-whys + scenario
+  constraint-mapping  → constraint + scaling
+  decision-matrix     → moscow + scaling
+  stakeholder-map     → stakeholder-map
+  gap-analysis        → exception + edge-case
+  event-storming-lite → scenario + day-in-life
 
 Adapt method depth to user level:
   Vibecoder: More open-discovery, explain why each question matters, use examples
@@ -210,7 +231,7 @@ Criteria (binary pass/fail):
 9. No placeholders ([TODO], [TBD]) in output
 
 Score = criteria met / total criteria
-Threshold: >= 95% (8/9 minimum)
+Threshold: >= 85% (8/9 minimum)
 If below: internal refinement loop (max 3x)
 ```
 
@@ -446,7 +467,7 @@ Post-conditions:
 9. User has explicitly approved the brief before handoff
 10. No placeholders ([TODO], [TBD]) in output
 
-Score threshold: 95%
+> These are supplementary enforcement dimensions validated during self-validation (Protocol 5.1). The authoritative threshold is defined above.
 
 ---
 

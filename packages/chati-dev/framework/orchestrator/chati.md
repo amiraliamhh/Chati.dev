@@ -172,11 +172,19 @@ In fresh install case, project.type and language are already in session.yaml —
 ```
 1. Update session.yaml: current_agent = greenfield-wu | brownfield-wu (based on project.type)
 2. Activate Session Lock (see Session Lock Protocol)
-3. If greenfield -> Read chati.dev/agents/discover/greenfield-wu.md -> Activate IMMEDIATELY
+3. Acknowledge inline prompt (if provided):
+   IF $ARGUMENTS is not empty AND was not consumed as a subcommand:
+     Display: "Got it — I'll use your description as context for the first agent."
+     Store $ARGUMENTS in session.yaml under initial_context for agent handoff
+     The activated agent MUST reference this context in its first interaction
+   ELSE:
+     Continue normally (agent will ask from scratch)
+4. If greenfield -> Read chati.dev/agents/discover/greenfield-wu.md -> Activate IMMEDIATELY
    If brownfield -> Read chati.dev/agents/discover/brownfield-wu.md -> Activate IMMEDIATELY
-4. The agent starts its work right away — no "Continue with X?" prompt needed
+5. The agent starts its work right away — no "Continue with X?" prompt needed
    For greenfield-wu: begin asking the user about their project vision
    For brownfield-wu: begin analyzing the existing codebase
+   If initial_context exists: agent uses it as seed input (skip redundant questions already answered)
 ```
 
 ### Step 5: Session Resume
@@ -248,7 +256,37 @@ When an agent completes (score >= 95%):
 
 ## Hybrid Activation Protocol
 
-The orchestrator uses TWO activation modes depending on the agent type:
+The orchestrator uses TWO activation modes depending on the agent type.
+
+### Pre-Flight Context Check (before activating ANY agent)
+
+Before activating the next agent, run context integrity validation:
+
+```
+1. Load handoff from previous agent (skip for first agent in pipeline)
+2. Validate handoff integrity for the receiving agent:
+   - Check: summary exists and length >= 10 chars
+   - Check: required fields for the receiving agent are present
+   - Check: no critical blockers unresolved
+   - Check: previous agent status is not "partial"
+   - Check: previous agent score >= 90%
+
+3. If validation PASSES:
+   Display: "Context check: OK — handoff from {previous_agent} verified"
+   Proceed with activation
+
+4. If validation has WARNINGS (non-blocking):
+   Display: "Context check: {warning_count} warning(s)"
+   List each warning
+   Proceed with activation (warnings are informational)
+
+5. If validation FAILS (missing required fields):
+   Display: "Context check: FAILED — missing: {missing_fields}"
+   Present options:
+     1. Re-run previous agent to regenerate handoff (Recommended)
+     2. Continue anyway (document risk in session.yaml)
+     3. Manual context injection (user provides missing info)
+```
 
 ### Interactive Agents (run IN-CONVERSATION)
 
@@ -276,11 +314,15 @@ For autonomous agents:
 ```
 1. Use the Bash tool to spawn the agent in a separate terminal:
 
+   > **Provider resolution**: The orchestrator MUST resolve the provider for each agent
+   > from config.yaml (agent_overrides > AGENT_MODELS default > primary provider) before spawning.
+
    node packages/chati-dev/src/terminal/run-agent.js \
      --agent {agent_name} \
      --task-id {primary_task_id} \
      --project-dir {absolute_project_path} \
      --previous-agent {previous_agent_name} \
+     --provider {resolved_provider} \
      --timeout 600000
 
 2. Wait for the JSON output
@@ -317,6 +359,7 @@ node packages/chati-dev/src/terminal/run-parallel.js \
   --task-ids {task_id_detail},{task_id_architect},{task_id_ux} \
   --project-dir {absolute_project_path} \
   --previous-agent brief \
+  --provider {resolved_provider} \
   --timeout 900000
 ```
 
@@ -478,6 +521,59 @@ provider_selections:
     reason: "codebase > 100K LOC"
     model: opus
     timestamp: "2026-..."
+```
+
+---
+
+## Context Bracket Display Protocol
+
+After each agent completes and before activating the next agent, display context status to keep the user informed about context window health.
+
+### Display Format
+
+```
+After each agent completion, show:
+
+  "{icon} Context: {BRACKET} ({remaining}%) — {action}"
+
+  Icons by bracket:
+    FRESH    = green circle
+    MODERATE = yellow circle
+    DEPLETED = orange circle
+    CRITICAL = red circle
+
+  Actions by bracket:
+    FRESH:    "Proceeding to {next_agent}"
+    MODERATE: "Proceeding to {next_agent} (context layers reduced)"
+    DEPLETED: "Warning: context running low. Consider handoff soon."
+    CRITICAL: "Context critically low. Initiating handoff protocol."
+```
+
+### Bracket Downgrade Alert
+
+```
+When bracket DROPS between agent transitions (e.g., FRESH -> MODERATE):
+
+  Display: "Context bracket changed: {old_bracket} -> {new_bracket}"
+
+  If new bracket is DEPLETED:
+    Add: "Non-essential context layers have been trimmed."
+
+  If new bracket is CRITICAL:
+    Add: "Mandatory handoff required (Article XII)."
+    Trigger handoff protocol immediately.
+```
+
+### Integration with Pipeline
+
+```
+The bracket status is calculated from pipeline progress:
+  - completed agents / total agents = progress ratio
+  - Remaining context estimated from turn count and agent count
+  - Bracket determined by remaining percentage
+
+This information is included in the advancePipeline() return value
+as contextBracket, making it available to the orchestrator for display.
 ```
 
 ---
@@ -748,7 +844,7 @@ To activate autonomous mode:
   1. User explicitly requests it
   2. Orchestrator updates session.yaml: execution_mode: autonomous
   3. Dev agent receives mode and operates accordingly
-  4. Blockers from taxonomy (C01-C14, G01-G08) always stop execution
+  4. Blockers from taxonomy (C01-C15, G01-G08) always stop execution
 ```
 
 ---
@@ -913,7 +1009,7 @@ If agent fails repeatedly:
 ### Allowed (orchestrator may also do this)
 - Read any file in the project (for state detection)
 - Write to .chati/session.yaml (session state)
-- Write to CLAUDE.md (session lock block)
+- Write to CLAUDE.local.md (session lock block)
 - Present status dashboards
 - Generate session digests
 
@@ -1111,7 +1207,7 @@ Level 4 - Graceful Degradation:
 - Auto-resolve simple deviations (redirect to correct agent)
 - Pause only on:
   - Quality gate failure (score < 95%)
-  - Critical blockers (C01-C14)
+  - Critical blockers (C01-C15)
   - Mode override requests
   - 3+ consecutive agent failures
 - Report progress periodically (after each agent completion)

@@ -12,7 +12,7 @@
  *   WAIVED   — Human explicitly overrode
  */
 
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { GateBase, determineVerdict } from './gate-base.js';
 import { loadSession } from '../orchestrator/session-manager.js';
@@ -69,26 +69,55 @@ export class QAImplementationGate extends GateBase {
       evidence.noCriticalBugs = evidence.qaImplHandoff.blockers.length === 0;
     }
 
-    // Check for performance benchmark results
+    // Check for performance benchmark results — parse content for real findings
     const perfPaths = [
       join(projectDir, 'chati.dev', 'artifacts', 'performance-report.md'),
       join(projectDir, '.performance-benchmark'),
     ];
     for (const perfPath of perfPaths) {
       if (existsSync(perfPath)) {
-        evidence.performanceBenchmarksMet = true;
+        try {
+          const content = readFileSync(perfPath, 'utf-8');
+          const hasFailures = /fail|exceeded|timeout|regression|degradation|below\s*threshold/i.test(content);
+          const hasPassIndicator = /pass|met|within\s*budget|no\s*(regressions|issues)|acceptable/i.test(content);
+          if (hasFailures && !hasPassIndicator) {
+            evidence.performanceBenchmarksMet = false;
+          } else if (hasPassIndicator) {
+            evidence.performanceBenchmarksMet = true;
+          } else {
+            evidence.performanceBenchmarksMet = null; // Ambiguous
+          }
+        } catch {
+          evidence.performanceBenchmarksMet = null;
+        }
         break;
       }
     }
 
-    // Check for security scan
+    // Check for security scan — parse content for real findings
     const secPaths = [
       join(projectDir, 'chati.dev', 'artifacts', 'security-report.md'),
       join(projectDir, '.security-scan'),
     ];
     for (const secPath of secPaths) {
       if (existsSync(secPath)) {
-        evidence.securityScanClean = true;
+        try {
+          const content = readFileSync(secPath, 'utf-8').toLowerCase();
+          // Look for indicators of security failures
+          const hasBlockers = /blocker|critical|high\s*severity|vulnerability found|failed/i.test(content);
+          const hasPassIndicator = /pass|clean|no\s*(issues|vulnerabilities|findings)|score:\s*(9[5-9]|100)/i.test(content);
+          if (hasBlockers) {
+            evidence.securityScanClean = false;
+          } else if (hasPassIndicator) {
+            evidence.securityScanClean = true;
+          } else {
+            // File exists but has no clear pass/fail indicators — ambiguous — not clean by default
+            evidence.securityScanClean = null;
+          }
+        } catch {
+          // File exists but cannot be read — treat as not available
+          evidence.securityScanClean = null;
+        }
         break;
       }
     }

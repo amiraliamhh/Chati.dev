@@ -14,7 +14,10 @@ const SESSION_FILE = '.chati/session.yaml';
 /**
  * Default session template.
  */
+const CURRENT_SCHEMA_VERSION = '1.0';
+
 const DEFAULT_SESSION = {
+  schema_version: CURRENT_SCHEMA_VERSION,
   version: '1.0',
   mode: 'discover',
   project: { name: '', type: 'greenfield', state: 'discover' },
@@ -103,9 +106,37 @@ export function initSession(projectDir, options = {}) {
 }
 
 /**
+ * Migrate a session object to the current schema version.
+ *
+ * @param {object} session - Session object (may be missing schema_version)
+ * @returns {{ migrated: boolean, fromVersion: string|null, toVersion: string }}
+ */
+export function migrateSession(session) {
+  if (!session || typeof session !== 'object') {
+    return { migrated: false, fromVersion: null, toVersion: CURRENT_SCHEMA_VERSION };
+  }
+
+  if (session.schema_version === CURRENT_SCHEMA_VERSION) {
+    return { migrated: false, fromVersion: session.schema_version, toVersion: CURRENT_SCHEMA_VERSION };
+  }
+
+  // v0 (no schema_version) → v1.0
+  const fromVersion = session.schema_version || null;
+  session.schema_version = CURRENT_SCHEMA_VERSION;
+
+  // Ensure fields added in v1.0 exist
+  if (!session.completed_agents) session.completed_agents = [];
+  if (!session.agent_results) session.agent_results = {};
+  if (!session.deviations) session.deviations = [];
+  if (!session.mode_transitions) session.mode_transitions = [];
+
+  return { migrated: true, fromVersion, toVersion: CURRENT_SCHEMA_VERSION };
+}
+
+/**
  * Load current session state.
  * @param {string} projectDir
- * @returns {{ loaded: boolean, session: object|null, error: string|null }}
+ * @returns {{ loaded: boolean, session: object|null, error: string|null, migrated?: boolean }}
  */
 export function loadSession(projectDir) {
   const sessionPath = join(projectDir, SESSION_FILE);
@@ -122,10 +153,22 @@ export function loadSession(projectDir) {
     const content = readFileSync(sessionPath, 'utf-8');
     const session = yaml.load(content);
 
+    // Run migration if needed
+    const migration = migrateSession(session);
+    if (migration.migrated) {
+      try {
+        const yamlContent = yaml.dump(session, { lineWidth: -1, noRefs: true });
+        writeFileSync(sessionPath, yamlContent, 'utf-8');
+      } catch {
+        // Migration write failed — continue with migrated in-memory session
+      }
+    }
+
     return {
       loaded: true,
       session,
       error: null,
+      migrated: migration.migrated,
     };
   } catch (err) {
     return {
@@ -351,6 +394,125 @@ export function getSessionSummary(projectDir) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Team / Concurrent Support
+// ---------------------------------------------------------------------------
+
+/**
+ * Claim session ownership for a user.
+ * Prevents concurrent users from modifying the same session.
+ *
+ * @param {string} projectDir
+ * @param {string} userId - Unique user identifier
+ * @returns {{ claimed: boolean, owner?: string, since?: string, error?: string }}
+ */
+export function claimSession(projectDir, userId) {
+  if (!projectDir || !userId) {
+    return { claimed: false, error: 'projectDir and userId are required' };
+  }
+
+  const loadResult = loadSession(projectDir);
+
+  if (!loadResult.loaded) {
+    return { claimed: false, error: loadResult.error };
+  }
+
+  const session = loadResult.session;
+
+  // Check existing ownership
+  if (session._owner && session._owner.userId && session._owner.userId !== userId) {
+    return {
+      claimed: false,
+      owner: session._owner.userId,
+      since: session._owner.since,
+      error: `Session already claimed by ${session._owner.userId}`,
+    };
+  }
+
+  // Claim it
+  const ownership = {
+    userId,
+    since: new Date().toISOString(),
+    hostname: typeof globalThis !== 'undefined' ? (globalThis.process?.env?.HOSTNAME || 'localhost') : 'localhost',
+    pid: process.pid,
+  };
+
+  const updateResult = updateSession(projectDir, { _owner: ownership });
+
+  if (!updateResult.saved) {
+    return { claimed: false, error: updateResult.error };
+  }
+
+  return { claimed: true, owner: userId, since: ownership.since };
+}
+
+/**
+ * Release session ownership.
+ *
+ * @param {string} projectDir
+ * @param {string} userId - User releasing the session
+ * @returns {{ released: boolean, error?: string }}
+ */
+export function releaseSession(projectDir, userId) {
+  if (!projectDir || !userId) {
+    return { released: false, error: 'projectDir and userId are required' };
+  }
+
+  const loadResult = loadSession(projectDir);
+
+  if (!loadResult.loaded) {
+    return { released: false, error: loadResult.error };
+  }
+
+  const session = loadResult.session;
+
+  // Only the owner can release
+  if (session._owner && session._owner.userId && session._owner.userId !== userId) {
+    return {
+      released: false,
+      error: `Cannot release: session owned by ${session._owner.userId}`,
+    };
+  }
+
+  const updateResult = updateSession(projectDir, { _owner: null });
+
+  if (!updateResult.saved) {
+    return { released: false, error: updateResult.error };
+  }
+
+  return { released: true };
+}
+
+/**
+ * Get current session owner information.
+ *
+ * @param {string} projectDir
+ * @returns {{ owner: string|null, since: string|null, hostname: string|null }}
+ */
+export function getSessionOwner(projectDir) {
+  if (!projectDir) {
+    return { owner: null, since: null, hostname: null };
+  }
+
+  const loadResult = loadSession(projectDir);
+
+  if (!loadResult.loaded || !loadResult.session._owner) {
+    return { owner: null, since: null, hostname: null };
+  }
+
+  const ownership = loadResult.session._owner;
+
+  return {
+    owner: ownership.userId || null,
+    since: ownership.since || null,
+    hostname: ownership.hostname || null,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
+
 /**
  * Check if a session exists and is valid.
  * @param {string} projectDir
@@ -380,7 +542,7 @@ export function validateSession(projectDir) {
   const session = loadResult.session;
 
   // Validate required fields
-  const requiredFields = ['version', 'mode', 'language', 'project_type', 'agents'];
+  const requiredFields = ['schema_version', 'version', 'mode', 'language', 'project_type', 'agents'];
   for (const field of requiredFields) {
     if (!session[field]) {
       return {

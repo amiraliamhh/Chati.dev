@@ -5,6 +5,9 @@
 
 import { AGENT_PIPELINE, getNextAgent } from './agent-selector.js';
 import { calculateBracket, estimateRemaining } from '../context/bracket-tracker.js';
+import { track as telemetryTrack, flush as telemetryFlush } from '../telemetry/collector.js';
+import { sendEvents } from '../telemetry/sender.js';
+import { getTelemetryConfig } from '../telemetry/config.js';
 
 /**
  * Pipeline phases in order.
@@ -72,6 +75,15 @@ export function initPipeline(options = {}) {
 }
 
 /**
+ * Standard Flow pipeline agents (mid-tier — 8 agents).
+ * Skips: WU, UX, Phases (tasks subsumes phase splitting).
+ */
+const STANDARD_FLOW_AGENTS = [
+  'brief', 'detail', 'architect', 'tasks',
+  'qa-planning', 'dev', 'qa-implementation', 'devops',
+];
+
+/**
  * Quick Flow pipeline agents (subset of full pipeline).
  * Skips: WU, Detail, Architect, UX, Phases, Tasks, QA-Planning.
  */
@@ -100,6 +112,40 @@ export function initQuickFlowPipeline(options = {}) {
     phase: mode,
     isGreenfield,
     isQuickFlow: true,
+    startedAt: new Date().toISOString(),
+    completedAt: null,
+    agents,
+    completedAgents: [],
+    currentAgent: null,
+    modeTransitions: [],
+    history: [],
+  };
+}
+
+/**
+ * Initialize a Standard Flow pipeline (mid-tier for moderate tasks).
+ * Uses 8 agents — between Quick Flow (4) and Full Flow (12).
+ *
+ * @param {object} options - { isGreenfield, mode }
+ * @returns {object} Pipeline state
+ */
+export function initStandardFlowPipeline(options = {}) {
+  const { isGreenfield = false, mode = 'discover' } = options;
+
+  const agents = {};
+  for (const agentName of STANDARD_FLOW_AGENTS) {
+    agents[agentName] = {
+      status: AGENT_STATUS.PENDING,
+      score: null,
+      startedAt: null,
+      completedAt: null,
+    };
+  }
+
+  return {
+    phase: mode,
+    isGreenfield,
+    isStandardFlow: true,
     startedAt: new Date().toISOString(),
     completedAt: null,
     agents,
@@ -199,6 +245,18 @@ export function advancePipeline(pipelineState, completedAgent, results = {}) {
 
       // Pipeline complete
       newState.completedAt = new Date().toISOString();
+      telemetryTrack('pipeline_completed', {
+        pipelineType: newState.isQuickFlow ? 'quick-flow' : newState.isStandardFlow ? 'standard' : 'full',
+        totalDuration: Date.now() - new Date(newState.startedAt).getTime(),
+        agentsRun: newState.completedAgents.length,
+        finalStatus: 'completed',
+        deviationCount: (newState.modeTransitions || []).length,
+      });
+      const flushedEvents = telemetryFlush();
+      if (flushedEvents.length > 0) {
+        const tConfig = getTelemetryConfig(newState.targetDir || process.cwd());
+        sendEvents(flushedEvents, { ...tConfig, version: newState.chatiVersion || 'unknown' });
+      }
       return {
         state: newState,
         nextAction: 'complete',
@@ -248,6 +306,18 @@ export function advancePipeline(pipelineState, completedAgent, results = {}) {
 
     // Pipeline complete
     newState.completedAt = new Date().toISOString();
+    telemetryTrack('pipeline_completed', {
+      pipelineType: newState.isQuickFlow ? 'quick-flow' : newState.isStandardFlow ? 'standard' : 'full',
+      totalDuration: Date.now() - new Date(newState.startedAt).getTime(),
+      agentsRun: newState.completedAgents.length,
+      finalStatus: 'completed',
+      deviationCount: (newState.modeTransitions || []).length,
+    });
+    const flushedEvents2 = telemetryFlush();
+    if (flushedEvents2.length > 0) {
+      const tConfig2 = getTelemetryConfig(newState.targetDir || process.cwd());
+      sendEvents(flushedEvents2, { ...tConfig2, version: newState.chatiVersion || 'unknown' });
+    }
     return {
       state: newState,
       nextAction: 'complete',

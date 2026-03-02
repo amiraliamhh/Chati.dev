@@ -17,6 +17,8 @@ import { fileURLToPath } from 'url';
 import { buildAgentPrompt } from './prompt-builder.js';
 import { spawnTerminal } from './spawner.js';
 import { parseAgentOutput } from './handoff-parser.js';
+import { createCostTracker } from './cost-tracker.js';
+import { track as telemetryTrack } from '../telemetry/collector.js';
 
 // ---------------------------------------------------------------------------
 // CLI argument parsing (no external deps)
@@ -85,6 +87,7 @@ async function main() {
       workflow: args.workflow || null,
       sessionState,
       additionalContext: args['additional-context'] || null,
+      provider: args.provider || null,
     });
   } catch (err) {
     outputError(`Failed to build prompt: ${err.message}`);
@@ -100,6 +103,7 @@ async function main() {
       agent: args.agent,
       taskId: args['task-id'],
       model: promptResult.model,
+      provider: promptResult.provider,
       prompt: promptResult.prompt,
       workingDir: projectDir,
       timeout,
@@ -121,6 +125,37 @@ async function main() {
   const stdout = handle.stdout.join('');
   const stderr = handle.stderr.join('');
 
+  // Track cost metrics
+  const tracker = createCostTracker();
+  const costRecord = tracker.recordExecution({
+    agent: args.agent,
+    model: promptResult.model,
+    provider: promptResult.provider || args.provider || 'claude',
+    taskId: args['task-id'],
+    inputText: promptResult.prompt || '',
+    outputText: stdout,
+    duration: elapsed,
+  });
+
+  const costEstimate = {
+    inputTokens: costRecord.inputTokens,
+    outputTokens: costRecord.outputTokens,
+    totalCost: costRecord.cost,
+    model: costRecord.model,
+    provider: costRecord.provider,
+  };
+
+  // Track telemetry (fire-and-forget, non-blocking)
+  telemetryTrack('agent_completed', {
+    agent: args.agent,
+    provider: costRecord.provider,
+    model: costRecord.model,
+    duration: elapsed,
+    score: null, // Score is determined by the gate, not the agent
+    retryCount: 0,
+    pipelineType: sessionState?.isQuickFlow ? 'quick-flow' : 'standard',
+  });
+
   // Parse the handoff from stdout
   const parsed = parseAgentOutput(stdout);
 
@@ -129,9 +164,11 @@ async function main() {
       status: parsed.handoff.status,
       agent: args.agent,
       model: promptResult.model,
+      provider: promptResult.provider || args.provider || 'claude',
       exitCode: handle.exitCode,
       handoff: parsed.handoff,
       elapsed,
+      costEstimate,
     });
   } else {
     // No handoff block found — return raw output
@@ -139,11 +176,13 @@ async function main() {
       status: handle.exitCode === 0 ? 'partial' : 'error',
       agent: args.agent,
       model: promptResult.model,
+      provider: promptResult.provider || args.provider || 'claude',
       exitCode: handle.exitCode,
       handoff: null,
       rawOutput: stdout.slice(0, 5000), // Truncate to avoid huge JSON
       stderr: stderr.slice(0, 2000),
       elapsed,
+      costEstimate,
     });
   }
 

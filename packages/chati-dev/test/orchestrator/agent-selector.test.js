@@ -107,6 +107,18 @@ describe('agent-selector', () => {
       assert.ok(result.parallelGroup.length > 0);
     });
 
+    it('should select brief with standard-flow workflowType for STANDARD_FLOW intent', () => {
+      const result = selectAgent({
+        intent: INTENT_TYPES.STANDARD_FLOW,
+        mode: 'discover',
+        completedAgents: [],
+      });
+
+      assert.equal(result.agent, 'brief');
+      assert.equal(result.workflowType, 'standard-flow');
+      assert.ok(result.reason.includes('Standard flow'));
+    });
+
     it('should handle no incomplete agents', () => {
       const allDiscoverAndPlanAgents = [
         'greenfield-wu',

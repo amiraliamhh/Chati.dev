@@ -323,3 +323,57 @@ describe('resolveProviderForAgent', () => {
     assert.equal(result.model, 'pro', 'Should use first key of gemini modelMap');
   });
 });
+
+// ---------------------------------------------------------------------------
+// loadEnabledProviders — provider name validation
+// ---------------------------------------------------------------------------
+
+describe('loadEnabledProviders validation', () => {
+  let validationDir;
+
+  before(() => {
+    validationDir = mkdtempSync(join(tmpdir(), 'chati-validation-'));
+  });
+
+  after(() => {
+    rmSync(validationDir, { recursive: true, force: true });
+  });
+
+  it('filters out invalid provider names (typos)', () => {
+    const configDir = join(validationDir, 'chati.dev');
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, 'config.yaml'),
+      [
+        'providers:',
+        '  claude:',
+        '    enabled: true',
+        '    primary: true',
+        '  gemni:',
+        '    enabled: true',
+        '    primary: false',
+      ].join('\n')
+    );
+
+    const result = loadEnabledProviders(validationDir);
+    assert.ok(!result.enabled.includes('gemni'), 'Typo provider should be filtered out');
+    assert.ok(result.enabled.includes('claude'), 'Valid provider should remain');
+  });
+
+  it('falls back primary to claude when primary is invalid', () => {
+    const configDir = join(validationDir, 'chati.dev');
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(
+      join(configDir, 'config.yaml'),
+      [
+        'providers:',
+        '  invalid_provider:',
+        '    enabled: true',
+        '    primary: true',
+      ].join('\n')
+    );
+
+    const result = loadEnabledProviders(validationDir);
+    assert.equal(result.primary, 'claude', 'Invalid primary should fall back to claude');
+  });
+});

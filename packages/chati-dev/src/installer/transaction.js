@@ -210,8 +210,9 @@ export class InstallTransaction {
             break;
           }
         }
-      } catch {
-        // Best-effort rollback: continue even if individual reversals fail
+      } catch (err) {
+        // Best-effort rollback: log and continue
+        console.error('[chati] rollback warning:', err?.message);
       }
     }
 

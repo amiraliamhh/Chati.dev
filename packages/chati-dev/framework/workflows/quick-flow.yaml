@@ -23,10 +23,12 @@ detection:
     - "Configuration or environment change"
     - "Small refactoring with clear scope"
     - "User says 'just do it' or 'quick fix' or similar urgency signals"
+    - "Simple, fun, or experimental project (single-purpose tool, game, prototype)"
+    - "Single-page utility or learning project with no production requirements"
   disqualifiers:
-    - "New feature requiring architecture decisions"
-    - "Multiple interconnected requirements"
-    - "Greenfield project (no existing codebase)"
+    - "New feature requiring architecture decisions (multiple services, database design, auth system)"
+    - "Multiple interconnected requirements (>3 distinct features)"
+    - "Complex greenfield project (enterprise, multi-service, compliance requirements)"
     - "Enterprise or compliance context"
     - "User explicitly requests full pipeline"
     - "Scope involves more than 5 files"
@@ -70,7 +72,7 @@ phases:
     sequence:
       - agent: qa-implementation
         action: validate-code
-        creates: [chati.dev/artifacts/8-Validation/qa-implementation-report.md]
+        creates: [chati.dev/artifacts/9-QA-Implementation/qa-implementation-report.md]
         notes: >
           Full QA-Implementation validation still applies (no shortcuts on quality).
           Adversarial review still mandatory.
@@ -85,7 +87,7 @@ phases:
     sequence:
       - agent: devops
         action: deploy
-        creates: [chati.dev/artifacts/8-Validation/deploy-report.md]
+        creates: [chati.dev/artifacts/10-Deploy/deploy-report.md]
         notes: "Standard deployment process"
 
 transitions:

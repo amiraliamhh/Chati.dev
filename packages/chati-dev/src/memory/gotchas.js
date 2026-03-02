@@ -25,13 +25,70 @@ function normalizeErrorMessage(message) {
 }
 
 /**
- * Hash an error message to create a pattern identifier.
+ * Error categories for gotcha classification.
+ * @enum {string}
+ */
+export const GotchaCategory = {
+  BUILD: 'BUILD',
+  TEST: 'TEST',
+  LINT: 'LINT',
+  RUNTIME: 'RUNTIME',
+  INTEGRATION: 'INTEGRATION',
+  SECURITY: 'SECURITY',
+  CONFIG: 'CONFIG',
+  UNKNOWN: 'UNKNOWN',
+};
+
+/**
+ * Severity levels for gotchas.
+ * @enum {string}
+ */
+export const GotchaSeverity = {
+  INFO: 'INFO',
+  WARNING: 'WARNING',
+  CRITICAL: 'CRITICAL',
+};
+
+/**
+ * Patterns for classifying errors into categories and severities.
+ */
+const CLASSIFICATION_PATTERNS = [
+  { regex: /Cannot find module|ENOENT|import.*not found/i, category: GotchaCategory.BUILD, severity: GotchaSeverity.WARNING },
+  { regex: /SyntaxError|Unexpected token/i, category: GotchaCategory.BUILD, severity: GotchaSeverity.CRITICAL },
+  { regex: /TypeError|ReferenceError/i, category: GotchaCategory.RUNTIME, severity: GotchaSeverity.WARNING },
+  { regex: /test.*fail|assertion|expect/i, category: GotchaCategory.TEST, severity: GotchaSeverity.WARNING },
+  { regex: /lint.*error|eslint|prettier/i, category: GotchaCategory.LINT, severity: GotchaSeverity.INFO },
+  { regex: /CORS|ETIMEDOUT|timeout|ECONNREFUSED/i, category: GotchaCategory.INTEGRATION, severity: GotchaSeverity.WARNING },
+  { regex: /security|vulnerability|injection|EACCES|401|403|unauthorized/i, category: GotchaCategory.SECURITY, severity: GotchaSeverity.CRITICAL },
+  { regex: /out of memory|heap|stack overflow/i, category: GotchaCategory.RUNTIME, severity: GotchaSeverity.CRITICAL },
+  { regex: /config|yaml|json.*parse|invalid.*option/i, category: GotchaCategory.CONFIG, severity: GotchaSeverity.WARNING },
+  { regex: /deprecated/i, category: GotchaCategory.BUILD, severity: GotchaSeverity.INFO },
+];
+
+/**
+ * Classify an error message into category and severity.
  * @param {string} message - Error message
- * @returns {string} Hash (first 8 chars)
+ * @returns {{ category: string, severity: string }}
+ */
+export function classifyError(message) {
+  const lowerMessage = (message || '').toLowerCase();
+  for (const pattern of CLASSIFICATION_PATTERNS) {
+    if (pattern.regex.test(lowerMessage)) {
+      return { category: pattern.category, severity: pattern.severity };
+    }
+  }
+  return { category: GotchaCategory.UNKNOWN, severity: GotchaSeverity.INFO };
+}
+
+/**
+ * Hash an error message to create a pattern identifier.
+ * Uses SHA-256 truncated to 16 chars for collision resistance.
+ * @param {string} message - Error message
+ * @returns {string} Hash (first 16 chars)
  */
 function hashErrorMessage(message) {
   const normalized = normalizeErrorMessage(message);
-  return createHash('md5').update(normalized).digest('hex').substring(0, 8);
+  return createHash('sha256').update(normalized).digest('hex').substring(0, 16);
 }
 
 /**
@@ -167,6 +224,7 @@ export function recordError(projectDir, error) {
 
     // Create new gotcha
     const gotchaId = generateGotchaId(gotchas);
+    const classification = classifyError(message);
     const newGotcha = {
       id: gotchaId,
       pattern: hash,
@@ -179,6 +237,8 @@ export function recordError(projectDir, error) {
       last_seen: timestamp,
       promoted_at: timestamp,
       resolution: null,
+      category: classification.category,
+      severity: classification.severity,
       context,
     };
 
@@ -307,11 +367,27 @@ export function getGotchaStats(projectDir) {
     .sort((a, b) => b.count - a.count)
     .slice(0, 10);
 
+  // Count by category
+  const categoryCounts = {};
+  for (const g of gotchas) {
+    const cat = g.category || GotchaCategory.UNKNOWN;
+    categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+  }
+
+  // Count by severity
+  const severityCounts = {};
+  for (const g of gotchas) {
+    const sev = g.severity || GotchaSeverity.INFO;
+    severityCounts[sev] = (severityCounts[sev] || 0) + 1;
+  }
+
   return {
     totalErrors: errorLog.length,
     totalGotchas: gotchas.length,
     recentErrors: recentErrors.length,
     topPatterns,
+    categoryCounts,
+    severityCounts,
   };
 }
 

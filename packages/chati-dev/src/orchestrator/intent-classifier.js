@@ -17,6 +17,7 @@ export const INTENT_TYPES = {
   RESUME: 'resume',
   HELP: 'help',
   QUICK_FLOW: 'quick_flow',
+  STANDARD_FLOW: 'standard_flow',
 };
 
 /**
@@ -73,6 +74,11 @@ const INTENT_KEYWORDS = {
     high: ['quick fix', 'hotfix', 'bug fix', 'small change', 'just fix', 'just do it'],
     medium: ['fix', 'tweak', 'config', 'patch', 'simple'],
     low: ['change', 'adjust', 'small', 'update'],
+  },
+  [INTENT_TYPES.STANDARD_FLOW]: {
+    high: ['standard flow', 'standard pipeline', 'medium project', 'moderate scope'],
+    medium: ['feature', 'integration', 'enhancement', 'module', 'component'],
+    low: ['project', 'application', 'service', 'system'],
   },
 };
 
@@ -222,6 +228,7 @@ export function getIntentPhase(intent) {
     [INTENT_TYPES.RESUME]: null, // uses current phase
     [INTENT_TYPES.HELP]: null, // no phase change
     [INTENT_TYPES.QUICK_FLOW]: 'discover', // starts with quick brief
+    [INTENT_TYPES.STANDARD_FLOW]: 'discover', // starts with brief
   };
 
   return phaseMap[intent];
@@ -352,6 +359,91 @@ export function detectQuickFlow(message, sessionContext = {}) {
 
   return {
     isQuickFlow: false,
+    confidence,
+    reason: `Confidence ${confidence.toFixed(2)} below threshold 0.8`,
+  };
+}
+
+/**
+ * Standard Flow trigger and disqualifier keywords.
+ */
+const STANDARD_FLOW_TRIGGERS = [
+  'standard flow', 'standard pipeline', 'medium project',
+  'new feature', 'integration', 'enhancement', 'module',
+];
+
+const STANDARD_FLOW_DISQUALIFIERS = [
+  'quick fix', 'hotfix', 'just fix', 'simple fix',
+  'full pipeline', 'full process', 'enterprise', 'compliance',
+];
+
+/**
+ * Detect if a message qualifies for Standard Flow (mid-tier pipeline).
+ * Standard Flow uses 8 agents (between Quick 4 and Full 12).
+ *
+ * @param {string} message - User's raw input
+ * @param {object} [sessionContext] - { mode, currentAgent, isGreenfield, hasExistingCodebase }
+ * @returns {{ isStandardFlow: boolean, confidence: number, reason: string }}
+ */
+export function detectStandardFlow(message, sessionContext = {}) {
+  const normalized = message.toLowerCase().trim();
+
+  // Check for disqualifiers first
+  for (const disqualifier of STANDARD_FLOW_DISQUALIFIERS) {
+    if (normalized.includes(disqualifier)) {
+      return {
+        isStandardFlow: false,
+        confidence: 0.9,
+        reason: `Disqualified: message contains "${disqualifier}"`,
+      };
+    }
+  }
+
+  // Count requirement signals
+  const sentenceCount = normalized.split(/[.!?]+/).filter(s => s.trim().length > 0).length;
+  const requirementSignals = (normalized.match(/\band\b|\balso\b|\bplus\b|\badditionally\b/g) || []).length;
+
+  // Heuristic: 2-5 requirements suggest standard flow (not quick, not full)
+  const requirementCount = sentenceCount + requirementSignals;
+
+  let triggerScore = 0;
+  const matchedTriggers = [];
+
+  // Check for trigger keywords
+  for (const trigger of STANDARD_FLOW_TRIGGERS) {
+    if (normalized.includes(trigger)) {
+      triggerScore += 3;
+      matchedTriggers.push(trigger);
+    }
+  }
+
+  // Requirement count in the sweet spot (2-5)
+  if (requirementCount >= 2 && requirementCount <= 5) {
+    triggerScore += 2;
+  }
+
+  // Brownfield moderate context
+  if (sessionContext.hasExistingCodebase || sessionContext.isGreenfield === false) {
+    triggerScore += 1;
+  }
+
+  // Message length in moderate range (not too short, not too long)
+  if (normalized.length > 100 && normalized.length < 1000) {
+    triggerScore += 1;
+  }
+
+  const confidence = Math.min(triggerScore / 5, 1.0);
+
+  if (confidence >= 0.8) {
+    return {
+      isStandardFlow: true,
+      confidence,
+      reason: `Standard flow triggers matched: ${matchedTriggers.join(', ') || 'moderate requirement count'}`,
+    };
+  }
+
+  return {
+    isStandardFlow: false,
     confidence,
     reason: `Confidence ${confidence.toFixed(2)} below threshold 0.8`,
   };

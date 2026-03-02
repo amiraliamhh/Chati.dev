@@ -84,6 +84,9 @@ describe('validateInstallation', () => {
     for (const f of ['root.md', 'governance.md', 'protocols.md', 'quality.md']) {
       writeFileSync(join(chatiDir, 'context', f), `# ${f}\nContent.`);
     }
+
+    // Config.yaml (valid for schema validation)
+    writeFileSync(join(chatiDir, 'config.yaml'), 'version: "3.0.0"\nproject_type: greenfield\nlanguage: en\n');
   });
 
   after(() => {
@@ -118,7 +121,7 @@ describe('validateInstallation', () => {
 
   it('returns correct total count', async () => {
     const results = await validateInstallation(tempDir);
-    assert.equal(results.total, 11, 'should check 11 categories');
+    assert.equal(results.total, 12, 'should check 12 categories');
   });
 
   it('fails intelligence when spec files are missing', async () => {

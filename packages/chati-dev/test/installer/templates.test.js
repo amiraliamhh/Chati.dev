@@ -19,6 +19,11 @@ describe('generateSessionYaml', () => {
     assert.ok(parsed, 'should parse as YAML');
   });
 
+  it('includes schema_version 1.0', () => {
+    const parsed = yaml.load(generateSessionYaml(testConfig));
+    assert.equal(parsed.schema_version, '1.0');
+  });
+
   it('includes project info', () => {
     const parsed = yaml.load(generateSessionYaml(testConfig));
     assert.equal(parsed.project.name, 'test-project');
@@ -252,6 +257,83 @@ describe('generateConfigYaml with llmProvider', () => {
 // Provider-specific router/agent tests
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Multi-Provider Continuity tests
+// ---------------------------------------------------------------------------
+
+describe('generateSessionYaml with allProviders', () => {
+  it('stores multiple providers in providers_enabled', () => {
+    const config = { ...testConfig, allProviders: ['claude', 'gemini'], llmProvider: 'claude' };
+    const parsed = yaml.load(generateSessionYaml(config));
+    assert.deepEqual(parsed.providers_enabled, ['claude', 'gemini']);
+  });
+
+  it('stores primary_provider field', () => {
+    const config = { ...testConfig, allProviders: ['claude', 'gemini'], llmProvider: 'claude' };
+    const parsed = yaml.load(generateSessionYaml(config));
+    assert.equal(parsed.primary_provider, 'claude');
+  });
+
+  it('falls back to single provider when allProviders is empty', () => {
+    const config = { ...testConfig, allProviders: [], llmProvider: 'gemini' };
+    const parsed = yaml.load(generateSessionYaml(config));
+    assert.deepEqual(parsed.providers_enabled, ['gemini']);
+  });
+
+  it('stores 3 providers when all selected', () => {
+    const config = { ...testConfig, allProviders: ['claude', 'gemini', 'codex'], llmProvider: 'claude' };
+    const parsed = yaml.load(generateSessionYaml(config));
+    assert.deepEqual(parsed.providers_enabled, ['claude', 'gemini', 'codex']);
+    assert.equal(parsed.primary_provider, 'claude');
+  });
+});
+
+describe('generateConfigYaml with allProviders', () => {
+  it('enables all providers from allProviders', () => {
+    const config = { ...testConfig, allProviders: ['claude', 'gemini'], llmProvider: 'claude' };
+    const parsed = yaml.load(generateConfigYaml(config));
+    assert.equal(parsed.providers.claude.enabled, true);
+    assert.equal(parsed.providers.gemini.enabled, true);
+    assert.equal(parsed.providers.claude.primary, true);
+    assert.equal(parsed.providers.gemini.primary, false);
+  });
+
+  it('enables all 3 providers', () => {
+    const config = { ...testConfig, allProviders: ['claude', 'gemini', 'codex'], llmProvider: 'claude' };
+    const parsed = yaml.load(generateConfigYaml(config));
+    assert.equal(parsed.providers.claude.enabled, true);
+    assert.equal(parsed.providers.gemini.enabled, true);
+    assert.equal(parsed.providers.codex.enabled, true);
+  });
+});
+
+describe('generateGeminiRouter with orchestratorPath', () => {
+  it('uses custom orchestratorPath when provided', () => {
+    const result = generateGeminiRouter({ orchestratorPath: 'chati.dev/.adapted/gemini/orchestrator/chati.md' });
+    assert.ok(result.includes('.adapted/gemini/orchestrator/chati.md'));
+    assert.ok(!result.includes('chati.dev/orchestrator/chati.md\n')); // Should not have the default
+  });
+
+  it('uses default orchestratorPath when not provided', () => {
+    const result = generateGeminiRouter();
+    assert.ok(result.includes('chati.dev/orchestrator/chati.md'));
+    assert.ok(!result.includes('.adapted'));
+  });
+});
+
+describe('generateCodexSkill with orchestratorPath', () => {
+  it('uses custom orchestratorPath when provided', () => {
+    const result = generateCodexSkill({ orchestratorPath: 'chati.dev/.adapted/codex/orchestrator/chati.md' });
+    assert.ok(result.includes('.adapted/codex/orchestrator/chati.md'));
+  });
+
+  it('uses default orchestratorPath when not provided', () => {
+    const result = generateCodexSkill();
+    assert.ok(result.includes('chati.dev/orchestrator/chati.md'));
+    assert.ok(!result.includes('.adapted'));
+  });
+});
+
 describe('generateGeminiRouter', () => {
   it('returns valid TOML content', () => {
     const result = generateGeminiRouter();
@@ -468,5 +550,37 @@ describe('generateCodexReadProtectionRules', () => {
   it('includes allow list', () => {
     const result = generateCodexReadProtectionRules();
     assert.ok(result.includes('.env.example'));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// active_provider in session.yaml
+// ---------------------------------------------------------------------------
+
+describe('generateSessionYaml active_provider', () => {
+  it('includes active_provider defaulting to primary', () => {
+    const result = generateSessionYaml({
+      ...testConfig,
+      llmProvider: 'claude',
+      allProviders: ['claude', 'gemini'],
+    });
+    const parsed = yaml.load(result);
+    assert.equal(parsed.active_provider, 'claude');
+  });
+
+  it('sets active_provider to gemini when gemini is primary', () => {
+    const result = generateSessionYaml({
+      ...testConfig,
+      llmProvider: 'gemini',
+      allProviders: ['claude', 'gemini'],
+    });
+    const parsed = yaml.load(result);
+    assert.equal(parsed.active_provider, 'gemini');
+  });
+
+  it('defaults active_provider to claude when llmProvider is missing', () => {
+    const result = generateSessionYaml(testConfig);
+    const parsed = yaml.load(result);
+    assert.equal(parsed.active_provider, 'claude');
   });
 });

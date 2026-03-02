@@ -149,8 +149,8 @@ export async function runMigrations(targetDir, fromVersion, toVersion) {
         for (const step of migration.rollback) {
           executeMigrationStep(targetDir, step);
         }
-      } catch {
-        // Rollback failed - return error
+      } catch (rollbackErr) {
+        console.error('[chati] migration rollback failed:', rollbackErr?.message);
       }
 
       return {

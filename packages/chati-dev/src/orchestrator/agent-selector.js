@@ -97,6 +97,16 @@ export function selectAgent(context) {
       };
     }
 
+    // Standard Flow: mid-tier pipeline (8 agents)
+    if (intent === INTENT_TYPES.STANDARD_FLOW) {
+      return {
+        agent: 'brief',
+        reason: 'Standard flow detected — mid-tier pipeline',
+        parallelGroup: null,
+        workflowType: 'standard-flow',
+      };
+    }
+
     // Planning intent starts with WU
     if (intent === INTENT_TYPES.DISCOVER) {
       const wuAgent = isGreenfield ? 'greenfield-wu' : 'brownfield-wu';

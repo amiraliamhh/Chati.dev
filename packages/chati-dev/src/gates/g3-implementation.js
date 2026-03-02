@@ -6,7 +6,7 @@
  * source files, lint passes, and no security issues are flagged.
  */
 
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { GateBase } from './gate-base.js';
 import { loadSession } from '../orchestrator/session-manager.js';
@@ -75,10 +75,23 @@ export class ImplementationGate extends GateBase {
       });
     }
 
-    // Check for lint results file
+    // Check for lint results file — parse content for real findings
     const lintResultPath = join(projectDir, '.lint-result');
     if (existsSync(lintResultPath)) {
-      evidence.lintPasses = true; // Presence of file assumed to mean lint was run
+      try {
+        const content = readFileSync(lintResultPath, 'utf-8');
+        const hasErrors = /error|failed|failure|\d+\s+error/i.test(content);
+        const hasPassIndicator = /pass|clean|ok|no\s*(errors|issues|warnings)|0\s+errors|success/i.test(content);
+        if (hasErrors && !hasPassIndicator) {
+          evidence.lintPasses = false;
+        } else if (hasPassIndicator) {
+          evidence.lintPasses = true;
+        } else {
+          evidence.lintPasses = null; // Ambiguous — file exists but no clear verdict
+        }
+      } catch {
+        evidence.lintPasses = null;
+      }
     }
 
     // Check for security scan results
@@ -88,7 +101,20 @@ export class ImplementationGate extends GateBase {
     ];
     for (const secPath of securityPaths) {
       if (existsSync(secPath)) {
-        evidence.securityClean = true;
+        try {
+          const content = readFileSync(secPath, 'utf-8');
+          const hasBlockers = /blocker|critical|high\s*severity|vulnerability found|failed/i.test(content);
+          const hasPassIndicator = /pass|clean|no\s*(issues|vulnerabilities|findings)|score:\s*(9[5-9]|100)/i.test(content);
+          if (hasBlockers) {
+            evidence.securityClean = false;
+          } else if (hasPassIndicator) {
+            evidence.securityClean = true;
+          } else {
+            evidence.securityClean = null;
+          }
+        } catch {
+          evidence.securityClean = null;
+        }
         break;
       }
     }

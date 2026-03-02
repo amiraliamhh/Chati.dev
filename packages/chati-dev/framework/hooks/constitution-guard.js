@@ -16,6 +16,17 @@ const SECRET_PATTERNS = [
   /(?:AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY)\s*[:=]/i,
   /(?:PRIVATE[_-]?KEY|-----BEGIN (?:RSA |EC )?PRIVATE KEY)/i,
   /(?:Bearer\s+)[A-Za-z0-9_\-./]{20,}/,
+  // GitHub tokens
+  /ghp_[A-Za-z0-9]{36,}/,
+  /github_pat_[A-Za-z0-9_]{22,}/,
+  // Slack tokens
+  /xox[bpa]-[A-Za-z0-9\-]{10,}/,
+  // Database connection strings
+  /(?:postgresql|mongodb\+srv|mysql):\/\/[^\s]{10,}/i,
+  // OpenSSH private key
+  /BEGIN OPENSSH PRIVATE KEY/,
+  // JWT token pattern
+  /eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}/,
 ];
 
 const DESTRUCTIVE_COMMANDS = [
@@ -25,6 +36,10 @@ const DESTRUCTIVE_COMMANDS = [
   /drop\s+(?:table|database)/i,
   /truncate\s+table/i,
   /DELETE\s+FROM\s+\w+\s*(?:;|$)/i,
+  /git\s+clean\s+-f/,
+  /git\s+push\s+--force-with-lease/,
+  /DROP\s+SCHEMA/i,
+  /DROP\s+INDEX/i,
 ];
 
 /**
@@ -87,8 +102,9 @@ async function main() {
     }
 
     process.stdout.write(JSON.stringify({ decision: 'allow' }));
-  } catch {
-    process.stdout.write(JSON.stringify({ decision: 'allow' }));
+  } catch (err) {
+    process.stderr.write(`[chati-hook-error] constitution-guard: ${err?.message || 'unknown'}\n`);
+    process.stdout.write(JSON.stringify({ decision: 'block', reason: 'Hook error — fail-closed for safety' }));
   }
 }
 

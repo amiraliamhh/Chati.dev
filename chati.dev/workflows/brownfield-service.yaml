@@ -70,7 +70,7 @@ phases:
         action: implement-tasks
       - agent: qa-implementation
         action: validate-code
-        creates: [chati.dev/artifacts/8-Validation/qa-implementation-report.md]
+        creates: [chati.dev/artifacts/9-QA-Implementation/qa-implementation-report.md]
 
   - phase: 6
     name: Deployment
@@ -78,7 +78,7 @@ phases:
     sequence:
       - agent: devops
         action: deploy
-        creates: [chati.dev/artifacts/8-Validation/deploy-report.md]
+        creates: [chati.dev/artifacts/10-Deploy/deploy-report.md]
 
 transitions:
   discover_to_plan:

@@ -11,6 +11,9 @@ import {
   getGotchaStats,
   clearExpiredErrors,
   updateGotchaResolution,
+  classifyError,
+  GotchaCategory,
+  GotchaSeverity,
 } from '../../src/memory/gotchas.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -193,5 +196,125 @@ describe('Gotchas', () => {
     });
 
     assert.equal(result.recorded, true);
+  });
+
+  describe('classifyError', () => {
+    it('should classify build errors', () => {
+      const result = classifyError('Cannot find module "express"');
+      assert.equal(result.category, GotchaCategory.BUILD);
+    });
+
+    it('should classify syntax errors as critical build', () => {
+      const result = classifyError('SyntaxError: Unexpected token');
+      assert.equal(result.category, GotchaCategory.BUILD);
+      assert.equal(result.severity, GotchaSeverity.CRITICAL);
+    });
+
+    it('should classify test failures', () => {
+      const result = classifyError('test suite failed: 3 assertions');
+      assert.equal(result.category, GotchaCategory.TEST);
+    });
+
+    it('should classify lint errors', () => {
+      const result = classifyError('eslint found 5 errors');
+      assert.equal(result.category, GotchaCategory.LINT);
+      assert.equal(result.severity, GotchaSeverity.INFO);
+    });
+
+    it('should classify security errors as critical', () => {
+      const result = classifyError('SQL injection vulnerability detected');
+      assert.equal(result.category, GotchaCategory.SECURITY);
+      assert.equal(result.severity, GotchaSeverity.CRITICAL);
+    });
+
+    it('should classify integration errors', () => {
+      const result = classifyError('ETIMEDOUT connecting to API');
+      assert.equal(result.category, GotchaCategory.INTEGRATION);
+    });
+
+    it('should classify config errors', () => {
+      const result = classifyError('yaml parse error in config');
+      assert.equal(result.category, GotchaCategory.CONFIG);
+    });
+
+    it('should return UNKNOWN for unrecognized errors', () => {
+      const result = classifyError('something completely random happened');
+      assert.equal(result.category, GotchaCategory.UNKNOWN);
+      assert.equal(result.severity, GotchaSeverity.INFO);
+    });
+  });
+
+  describe('GotchaCategory and GotchaSeverity enums', () => {
+    it('should have all expected categories', () => {
+      assert.equal(GotchaCategory.BUILD, 'BUILD');
+      assert.equal(GotchaCategory.TEST, 'TEST');
+      assert.equal(GotchaCategory.LINT, 'LINT');
+      assert.equal(GotchaCategory.RUNTIME, 'RUNTIME');
+      assert.equal(GotchaCategory.INTEGRATION, 'INTEGRATION');
+      assert.equal(GotchaCategory.SECURITY, 'SECURITY');
+      assert.equal(GotchaCategory.CONFIG, 'CONFIG');
+      assert.equal(GotchaCategory.UNKNOWN, 'UNKNOWN');
+    });
+
+    it('should have all expected severities', () => {
+      assert.equal(GotchaSeverity.INFO, 'INFO');
+      assert.equal(GotchaSeverity.WARNING, 'WARNING');
+      assert.equal(GotchaSeverity.CRITICAL, 'CRITICAL');
+    });
+  });
+
+  describe('SHA-256 hash (v4 upgrade)', () => {
+    it('should produce 16-char hash for gotcha patterns', () => {
+      const testDir = join(tempDir, 'hash-test');
+      mkdirSync(testDir, { recursive: true });
+
+      const error = {
+        message: 'Hash test error message for validation',
+        agent: 'test',
+        task: 'test-hash',
+      };
+
+      for (let i = 0; i < 3; i++) {
+        recordError(testDir, error);
+      }
+
+      const gotchas = getGotchas(testDir);
+      const latest = gotchas[gotchas.length - 1];
+      assert.ok(latest.pattern);
+      assert.equal(latest.pattern.length, 16);
+    });
+  });
+
+  describe('category and severity in promoted gotchas', () => {
+    it('should include category and severity in new gotchas', () => {
+      const testDir = join(tempDir, 'cat-sev-test');
+      mkdirSync(testDir, { recursive: true });
+
+      const error = {
+        message: 'SyntaxError: Unexpected token } at line 42',
+        agent: 'dev',
+        task: 'implement-feature',
+      };
+
+      for (let i = 0; i < 3; i++) {
+        recordError(testDir, error);
+      }
+
+      const gotchas = getGotchas(testDir);
+      const syntaxGotcha = gotchas.find(g => g.original_message?.includes('SyntaxError'));
+      assert.ok(syntaxGotcha);
+      assert.equal(syntaxGotcha.category, GotchaCategory.BUILD);
+      assert.equal(syntaxGotcha.severity, GotchaSeverity.CRITICAL);
+    });
+  });
+
+  describe('getGotchaStats with categories', () => {
+    it('should include categoryCounts and severityCounts', () => {
+      const stats = getGotchaStats(tempDir);
+      assert.ok(stats.categoryCounts);
+      assert.ok(stats.severityCounts);
+      assert.ok(typeof stats.categoryCounts === 'object');
+      assert.ok(typeof stats.severityCounts === 'object');
+    });
   });
 });

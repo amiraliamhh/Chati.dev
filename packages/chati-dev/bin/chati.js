@@ -247,6 +247,46 @@ async function main() {
       break;
     }
 
+    case 'telemetry': {
+      const { getTelemetryConfig, setEnabled, getAnonymousId } = await import('../src/telemetry/config.js');
+      const { getStatus, flush } = await import('../src/telemetry/collector.js');
+      const telSubCmd = args[1] || 'status';
+
+      if (telSubCmd === 'enable') {
+        setEnabled(targetDir, true);
+        const id = getAnonymousId(targetDir);
+        console.log('Telemetry enabled.');
+        console.log(`  Anonymous ID: ${id}`);
+        console.log('  Disable anytime: npx chati-dev telemetry disable');
+      } else if (telSubCmd === 'disable') {
+        setEnabled(targetDir, false);
+        console.log('Telemetry disabled. No data will be collected or sent.');
+      } else if (telSubCmd === 'show') {
+        const status = getStatus();
+        const config = getTelemetryConfig(targetDir);
+        console.log('Telemetry Status');
+        console.log('='.repeat(30));
+        console.log(`  Enabled:      ${config.enabled ? 'Yes' : 'No'}`);
+        console.log(`  Anonymous ID: ${config.anonymousId || 'Not generated'}`);
+        console.log(`  Buffered:     ${status.buffered} events`);
+        console.log(`  Endpoint:     ${config.endpoint}`);
+        if (status.buffered > 0) {
+          console.log('\n  Pending events:');
+          const events = flush();
+          for (const e of events) {
+            console.log(`    - ${e.type} (${e.timestamp})`);
+          }
+        }
+      } else {
+        const config = getTelemetryConfig(targetDir);
+        console.log(`Telemetry: ${config.enabled ? 'enabled' : 'disabled'}`);
+        if (config.enabled) {
+          console.log(`  Anonymous ID: ${config.anonymousId}`);
+        }
+      }
+      break;
+    }
+
     case 'changelog': {
       console.log(`Chati.dev v${pkg.version} Changelog`);
       console.log('═'.repeat(40));
@@ -297,6 +337,12 @@ Intelligence:
   npx chati-dev context                            Context bracket status
   npx chati-dev registry [stats|check]             Entity registry
   npx chati-dev health                             System health check
+
+Telemetry:
+  npx chati-dev telemetry                          Show telemetry status
+  npx chati-dev telemetry enable                   Enable anonymous telemetry
+  npx chati-dev telemetry disable                  Disable telemetry
+  npx chati-dev telemetry show                     Show pending events
 `);
       break;
     }
