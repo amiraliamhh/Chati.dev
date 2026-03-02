@@ -96,7 +96,7 @@ export async function stepProviderSelection() {
   }
 
   const selected = await p.multiselect({
-    message: t('installer.provider_selection_title'),
+    message: `${t('installer.provider_selection_title')} ${dim('(space to select, enter to confirm)')}`,
     options,
     required: true,
   });
@@ -127,7 +127,7 @@ export async function stepEditorSelection() {
   }));
 
   const selected = await p.multiselect({
-    message: t('installer.editor_selection_title'),
+    message: `${t('installer.editor_selection_title')} ${dim('(space to select, enter to confirm)')}`,
     options,
     required: false,
   });
@@ -187,7 +187,7 @@ export async function stepIDESelection() {
   }
 
   const selectedIDEs = await p.multiselect({
-    message: t('installer.ide_selection_title'),
+    message: `${t('installer.ide_selection_title')} ${dim('(space to select, enter to confirm)')}`,
     options,
     required: true,
   });
@@ -308,7 +308,7 @@ export async function stepTelemetryConsent() {
 
   const consent = await p.confirm({
     message: t('installer.telemetry_consent'),
-    initialValue: false,
+    initialValue: true,
   });
 
   if (p.isCancel(consent)) return false;
