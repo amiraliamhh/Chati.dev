@@ -136,8 +136,7 @@ export function runTests(projectDir, options = {}) {
   }
 
   const start = Date.now();
-  let rawOutput = '';
-  let exitCode = 0;
+  let rawOutput, exitCode;
 
   try {
     rawOutput = execSync(command, {
@@ -146,6 +145,7 @@ export function runTests(projectDir, options = {}) {
       timeout,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+    exitCode = 0;
   } catch (err) {
     exitCode = err.status || 1;
     rawOutput = (err.stdout || '') + (err.stderr || '');
@@ -208,8 +208,7 @@ export function runLint(projectDir, options = {}) {
     return { success: true, errors: 0, warnings: 0, rawOutput: 'No lint command detected' };
   }
 
-  let rawOutput = '';
-  let exitCode = 0;
+  let rawOutput, exitCode;
 
   try {
     rawOutput = execSync(command, {
@@ -218,6 +217,7 @@ export function runLint(projectDir, options = {}) {
       timeout,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+    exitCode = 0;
   } catch (err) {
     exitCode = err.status || 1;
     rawOutput = (err.stdout || '') + (err.stderr || '');

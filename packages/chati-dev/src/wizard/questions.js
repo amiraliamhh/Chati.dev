@@ -80,7 +80,7 @@ export async function stepProviderSelection() {
 
   for (const [key, config] of cliIDEs) {
     const provider = IDE_TO_PROVIDER[key];
-    let installed = false;
+    let installed;
     try {
       installed = provider ? await isProviderAvailable(provider) : false;
     } catch {
