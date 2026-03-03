@@ -24,7 +24,7 @@ export function getTelemetryConfig(targetDir) {
   const configPath = join(targetDir, 'chati.dev', 'config.yaml');
 
   const defaults = {
-    enabled: false,
+    enabled: true,
     anonymousId: null,
     endpoint: 'https://chati-telemetry.vercel.app/api/events',
     apiKey: '10b0b54ba4f392fa46379ba778062ab0af5ca61e79609a7dce4aadd660104b56',

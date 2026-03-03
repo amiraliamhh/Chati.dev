@@ -295,23 +295,32 @@ export async function stepConfirmation(config) {
 }
 
 /**
- * Step 5: Telemetry Consent (opt-in)
+ * Step: Terms of Use Acceptance
  *
- * Asks the user if they want to share anonymous usage metrics.
- * Returns true (opt-in) or false (opt-out).
+ * Shows Terms of Use that include telemetry data collection notice.
+ * User must accept to proceed. Declining aborts installation.
+ * Telemetry is enabled by default (opt-out model).
  */
-export async function stepTelemetryConsent() {
+export async function stepTermsOfUse() {
   p.note(
-    `${dim(t('installer.telemetry_description'))}\n\n${dim(t('installer.telemetry_privacy'))}`,
-    dim('Telemetry')
+    `${dim(t('installer.tos_summary'))}\n\n` +
+    `${dim(t('installer.tos_telemetry_what'))}\n\n` +
+    `${dim(t('installer.tos_telemetry_optout'))}`,
+    t('installer.tos_title')
   );
 
-  const consent = await p.confirm({
-    message: t('installer.telemetry_consent'),
+  const accepted = await p.confirm({
+    message: t('installer.tos_accept'),
     initialValue: true,
   });
 
-  if (p.isCancel(consent)) return false;
+  if (p.isCancel(accepted) || !accepted) {
+    p.cancel(t('installer.tos_declined'));
+    process.exit(0);
+  }
 
-  return consent;
+  return true;
 }
+
+/** @deprecated Use stepTermsOfUse instead */
+export const stepTelemetryConsent = stepTermsOfUse;

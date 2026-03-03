@@ -110,7 +110,7 @@ export function generateConfigYaml(config) {
 
   // Add telemetry config
   configData.telemetry = {
-    enabled: config.telemetryEnabled || false,
+    enabled: config.telemetryEnabled !== false,
     anonymous_id: null,
   };
 

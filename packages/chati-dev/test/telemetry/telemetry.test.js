@@ -135,7 +135,7 @@ describe('telemetry config', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it('isEnabled returns false by default', () => {
+  it('isEnabled returns false when config says false', () => {
     assert.equal(isEnabled(dir), false);
   });
 
@@ -167,7 +167,7 @@ describe('telemetry config', () => {
 
   it('getTelemetryConfig returns defaults for missing dir', () => {
     const config = getTelemetryConfig('/nonexistent/path');
-    assert.equal(config.enabled, false);
+    assert.equal(config.enabled, true);
     assert.equal(config.anonymousId, null);
   });
 });

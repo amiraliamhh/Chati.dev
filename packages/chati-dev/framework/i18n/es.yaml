@@ -59,6 +59,14 @@ installer:
   quick_start_1: "Abra su IDE"
   quick_start_2: "Escriba: /chati"
   quick_start_3: "El orquestador le guiara por el proceso"
+  tos_title: "Terminos de Uso"
+  tos_summary: "Al continuar, usted acepta los Terminos de Uso de Chati.dev (vea TERMS_OF_USE.md en el paquete)."
+  tos_telemetry_what: "Chati.dev recopila datos anonimos de uso: agentes utilizados, duracion del pipeline, puntuaciones de los gates. No se recopila codigo, archivos ni datos personales."
+  tos_telemetry_optout: "Puede desactivar la telemetria en cualquier momento con: npx chati-dev telemetry disable"
+  tos_accept: "Acepta los Terminos de Uso?"
+  tos_declined: "Terminos de Uso rechazados. Instalacion cancelada."
+  tos_telemetry_enabled: "Telemetria: activada (anonima, opt-out — desactive con: npx chati-dev telemetry disable)"
+  tos_telemetry_disabled: "Telemetria: desactivada"
 
 agents:
   starting: "Iniciando agente: {agent}"

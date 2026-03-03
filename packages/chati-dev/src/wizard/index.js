@@ -3,7 +3,7 @@ import { readFileSync } from 'fs';
 import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { logBanner } from '../utils/logger.js';
-import { stepLanguage, stepProjectType, stepIDESelection, stepProviderSelection, stepEditorSelection, stepPrimaryProvider, stepConfirmation, stepTelemetryConsent } from './questions.js';
+import { stepLanguage, stepProjectType, stepIDESelection, stepProviderSelection, stepEditorSelection, stepPrimaryProvider, stepConfirmation, stepTermsOfUse } from './questions.js';
 import { createSpinner, showStep, showValidation, showQuickStart } from './feedback.js';
 import { installFramework } from '../installer/core.js';
 import { validateInstallation } from '../installer/validator.js';
@@ -33,7 +33,12 @@ export async function runWizard(targetDir, options = {}) {
 
   const language = options.language || await stepLanguage();
 
-  // Step 2: Project Type
+  // Step 2: Terms of Use (must accept to continue)
+  if (options.telemetry === undefined) {
+    await stepTermsOfUse();
+  }
+
+  // Step 3: Project Type
   const projectType = options.projectType || await stepProjectType(targetDir);
 
   // Step 3a: Provider Selection (which AI providers to use)
@@ -73,11 +78,10 @@ export async function runWizard(targetDir, options = {}) {
 
   await stepConfirmation(config);
 
-  // Step 5: Telemetry Consent (opt-in)
-  const telemetryEnabled = options.telemetry !== undefined ? options.telemetry : await stepTelemetryConsent();
-  config.telemetryEnabled = telemetryEnabled;
+  // Telemetry: enabled by default (opt-out model via ToS)
+  config.telemetryEnabled = options.telemetry !== undefined ? options.telemetry : true;
 
-  // Step 5: Installation + Validation
+  // Installation + Validation
   const primaryIDE = selectedIDEs.find(ide => IDE_TO_PROVIDER[ide] === primaryProvider) || selectedIDEs[0];
   const primaryIDEName = IDE_CONFIGS[primaryIDE]?.name || primaryIDE;
 
@@ -112,9 +116,10 @@ export async function runWizard(targetDir, options = {}) {
     showStep(t('installer.created_memories'));
     showStep(t('installer.installed_intelligence'));
     showStep(`${t('installer.configured_mcps')} ${selectedMCPs.join(', ')}`);
-    if (telemetryEnabled) {
-      showStep('Telemetry: enabled (anonymous, opt-in)');
-    }
+    showStep(config.telemetryEnabled
+      ? t('installer.tos_telemetry_enabled')
+      : t('installer.tos_telemetry_disabled')
+    );
 
     // Validation
     console.log();
