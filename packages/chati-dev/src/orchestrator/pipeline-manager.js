@@ -5,9 +5,10 @@
 
 import { AGENT_PIPELINE, getNextAgent } from './agent-selector.js';
 import { calculateBracket, estimateRemaining } from '../context/bracket-tracker.js';
-import { track as telemetryTrack, flush as telemetryFlush } from '../telemetry/collector.js';
+import { initCollector, track as telemetryTrack, flush as telemetryFlush } from '../telemetry/collector.js';
 import { sendEvents } from '../telemetry/sender.js';
-import { getTelemetryConfig } from '../telemetry/config.js';
+import { getTelemetryConfig, isEnabled as isTelemetryEnabled } from '../telemetry/config.js';
+import { getCurrentVersion } from '../upgrade/checker.js';
 
 /**
  * Pipeline phases in order.
@@ -39,7 +40,7 @@ const QA_IMPLEMENTATION_THRESHOLD = 95;
  * @returns {object} Pipeline state
  */
 export function initPipeline(options = {}) {
-  const { isGreenfield = true, mode = 'discover' } = options;
+  const { isGreenfield = true, mode = 'discover', targetDir } = options;
 
   const agents = {};
   for (const agentDef of AGENT_PIPELINE) {
@@ -61,9 +62,16 @@ export function initPipeline(options = {}) {
     };
   }
 
+  const resolvedDir = targetDir || process.cwd();
+
+  // Initialize telemetry collector based on project config
+  initCollector(isTelemetryEnabled(resolvedDir));
+
   return {
     phase: mode,
     isGreenfield,
+    targetDir: resolvedDir,
+    chatiVersion: getCurrentVersion(resolvedDir) || 'unknown',
     startedAt: new Date().toISOString(),
     completedAt: null,
     agents,
@@ -96,7 +104,7 @@ const QUICK_FLOW_AGENTS = ['brief', 'dev', 'qa-implementation', 'devops'];
  * @returns {object} Pipeline state
  */
 export function initQuickFlowPipeline(options = {}) {
-  const { isGreenfield = false, mode = 'discover' } = options;
+  const { isGreenfield = false, mode = 'discover', targetDir } = options;
 
   const agents = {};
   for (const agentName of QUICK_FLOW_AGENTS) {
@@ -108,10 +116,17 @@ export function initQuickFlowPipeline(options = {}) {
     };
   }
 
+  const resolvedDir = targetDir || process.cwd();
+
+  // Initialize telemetry collector based on project config
+  initCollector(isTelemetryEnabled(resolvedDir));
+
   return {
     phase: mode,
     isGreenfield,
     isQuickFlow: true,
+    targetDir: resolvedDir,
+    chatiVersion: getCurrentVersion(resolvedDir) || 'unknown',
     startedAt: new Date().toISOString(),
     completedAt: null,
     agents,
@@ -130,7 +145,7 @@ export function initQuickFlowPipeline(options = {}) {
  * @returns {object} Pipeline state
  */
 export function initStandardFlowPipeline(options = {}) {
-  const { isGreenfield = false, mode = 'discover' } = options;
+  const { isGreenfield = false, mode = 'discover', targetDir } = options;
 
   const agents = {};
   for (const agentName of STANDARD_FLOW_AGENTS) {
@@ -142,10 +157,17 @@ export function initStandardFlowPipeline(options = {}) {
     };
   }
 
+  const resolvedDir = targetDir || process.cwd();
+
+  // Initialize telemetry collector based on project config
+  initCollector(isTelemetryEnabled(resolvedDir));
+
   return {
     phase: mode,
     isGreenfield,
     isStandardFlow: true,
+    targetDir: resolvedDir,
+    chatiVersion: getCurrentVersion(resolvedDir) || 'unknown',
     startedAt: new Date().toISOString(),
     completedAt: null,
     agents,

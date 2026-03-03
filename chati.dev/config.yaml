@@ -27,3 +27,8 @@ providers:
 #   brownfield-wu:
 #     provider: gemini
 #     model: pro
+
+# Telemetry — opt-in anonymous usage tracking
+telemetry:
+  enabled: true
+  anonymous_id: d0ae24af-0a62-472c-b501-2104f03aa6af
