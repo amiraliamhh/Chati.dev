@@ -44,6 +44,17 @@ export async function installFramework(config) {
     generateSessionYaml({ projectName, projectType, language, selectedIDEs, selectedMCPs, llmProvider, allProviders }),
     'utf-8'
   );
+  writeFileSync(
+    join(targetDir, '.chati', 'interaction-log.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      interactions: [],
+      userPrompts: [],
+    }, null, 2) + '\n',
+    'utf-8'
+  );
 
   // 2. Create chati.dev/ framework directory (copy from source)
   const frameworkDir = join(targetDir, 'chati.dev');
@@ -422,6 +433,7 @@ function updateGitignore(targetDir, selectedIDEs) {
     '',
     '# Chati.dev runtime files (session lock — not committed)',
     '.chati/memories/*/session/',
+    '.chati/interaction-log.json',
   ];
 
   if (selectedIDEs.includes('claude-code')) {

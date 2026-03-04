@@ -19,6 +19,7 @@ import { spawnTerminal } from './spawner.js';
 import { parseAgentOutput } from './handoff-parser.js';
 import { createCostTracker } from './cost-tracker.js';
 import { track as telemetryTrack } from '../telemetry/collector.js';
+import { appendInteraction } from '../logging/interaction-logger.js';
 
 // ---------------------------------------------------------------------------
 // CLI argument parsing (no external deps)
@@ -94,6 +95,30 @@ async function main() {
     process.exit(1);
   }
 
+  const resolvedProvider = promptResult.provider || args.provider || 'claude';
+
+  if (args['additional-context']) {
+    appendInteraction(projectDir, {
+      kind: 'user_prompt',
+      source: 'additional-context',
+      text: args['additional-context'],
+      agent: args.agent,
+      taskId: args['task-id'],
+      provider: resolvedProvider,
+      model: promptResult.model,
+    });
+  }
+
+  appendInteraction(projectDir, {
+    kind: 'generated_prompt',
+    source: 'prompt-builder',
+    text: promptResult.prompt || '',
+    agent: args.agent,
+    taskId: args['task-id'],
+    provider: resolvedProvider,
+    model: promptResult.model,
+  });
+
   // Spawn the agent terminal
   const startTime = Date.now();
   let handle;
@@ -131,12 +156,35 @@ async function main() {
   const stdout = handle.stdout.join('');
   const stderr = handle.stderr.join('');
 
+  appendInteraction(projectDir, {
+    kind: 'llm_response',
+    source: 'agent-stdout',
+    text: stdout,
+    agent: args.agent,
+    taskId: args['task-id'],
+    provider: resolvedProvider,
+    model: promptResult.model,
+    metadata: { exitCode: handle.exitCode },
+  });
+  if (stderr) {
+    appendInteraction(projectDir, {
+      kind: 'llm_stderr',
+      source: 'agent-stderr',
+      text: stderr,
+      agent: args.agent,
+      taskId: args['task-id'],
+      provider: resolvedProvider,
+      model: promptResult.model,
+      metadata: { exitCode: handle.exitCode },
+    });
+  }
+
   // Track cost metrics
   const tracker = createCostTracker();
   const costRecord = tracker.recordExecution({
     agent: args.agent,
     model: promptResult.model,
-    provider: promptResult.provider || args.provider || 'claude',
+    provider: resolvedProvider,
     taskId: args['task-id'],
     inputText: promptResult.prompt || '',
     outputText: stdout,
@@ -184,7 +232,7 @@ async function main() {
       status: parsed.handoff.status,
       agent: args.agent,
       model: promptResult.model,
-      provider: promptResult.provider || args.provider || 'claude',
+      provider: resolvedProvider,
       exitCode: handle.exitCode,
       handoff: parsed.handoff,
       elapsed,
@@ -196,7 +244,7 @@ async function main() {
       status: handle.exitCode === 0 ? 'partial' : 'error',
       agent: args.agent,
       model: promptResult.model,
-      provider: promptResult.provider || args.provider || 'claude',
+      provider: resolvedProvider,
       exitCode: handle.exitCode,
       handoff: null,
       rawOutput: stdout.slice(0, 5000), // Truncate to avoid huge JSON
