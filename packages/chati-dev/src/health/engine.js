@@ -139,14 +139,22 @@ export async function checkHooksHealth(projectDir) {
     return { name: 'hooks-health', status: 'fail', message: 'Hooks directory not found', duration: Date.now() - start };
   }
 
-  const expectedHooks = ['prism-engine.js', 'model-governance.js', 'mode-governance.js', 'constitution-guard.js', 'read-protection.js', 'session-digest.js'];
+  const expectedHooks = [
+    'prism-engine.js',
+    'model-governance.js',
+    'mode-governance.js',
+    'constitution-guard.js',
+    'read-protection.js',
+    'session-digest.js',
+    'interaction-logger.js',
+  ];
   const missing = expectedHooks.filter((h) => !existsSync(join(hooksDir, h)));
 
   if (missing.length > 0) {
     return { name: 'hooks-health', status: 'fail', message: `Missing hooks: ${missing.join(', ')}`, duration: Date.now() - start };
   }
 
-  return { name: 'hooks-health', status: 'pass', message: 'All 6 hooks present', duration: Date.now() - start };
+  return { name: 'hooks-health', status: 'pass', message: 'All 7 hooks present', duration: Date.now() - start };
 }
 
 /**

@@ -10,6 +10,19 @@ import { join } from 'path';
 
 const LOG_FILE_NAME = 'interaction-log.json';
 
+function createEmptyLog(now) {
+  return {
+    schemaVersion: 2,
+    createdAt: now,
+    updatedAt: now,
+    interactions: [],
+    userPrompts: [],
+    conversation: [],
+    systemTrace: [],
+    timeline: [],
+  };
+}
+
 /**
  * Get absolute path to the interaction log file.
  *
@@ -35,13 +48,7 @@ export function ensureInteractionLog(projectDir) {
   const logPath = getInteractionLogPath(projectDir);
   if (!existsSync(logPath)) {
     const now = new Date().toISOString();
-    writeFileSync(logPath, JSON.stringify({
-      schemaVersion: 1,
-      createdAt: now,
-      updatedAt: now,
-      interactions: [],
-      userPrompts: [],
-    }, null, 2) + '\n', 'utf-8');
+    writeFileSync(logPath, JSON.stringify(createEmptyLog(now), null, 2) + '\n', 'utf-8');
   }
 
   return logPath;
@@ -52,7 +59,14 @@ export function ensureInteractionLog(projectDir) {
  *
  * @param {string} projectDir
  * @param {{
- *   kind: 'user_prompt'|'generated_prompt'|'llm_response'|'llm_stderr',
+ *   kind:
+ *     'user_prompt'|
+ *     'assistant_response'|
+ *     'generated_prompt'|
+ *     'llm_response'|
+ *     'llm_stderr'|
+ *     'system_event'|
+ *     'tool_event',
  *   text: string,
  *   agent?: string,
  *   taskId?: string,
@@ -71,6 +85,9 @@ export function appendInteraction(projectDir, event) {
 
     if (!Array.isArray(log.interactions)) log.interactions = [];
     if (!Array.isArray(log.userPrompts)) log.userPrompts = [];
+    if (!Array.isArray(log.conversation)) log.conversation = [];
+    if (!Array.isArray(log.systemTrace)) log.systemTrace = [];
+    if (!Array.isArray(log.timeline)) log.timeline = [];
 
     const entry = {
       id: `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`,
@@ -95,7 +112,48 @@ export function appendInteraction(projectDir, event) {
         source: event.source || null,
         text: event.text || '',
       });
+      log.conversation.push({
+        timestamp: now,
+        role: 'user',
+        source: event.source || null,
+        text: event.text || '',
+        agent: event.agent || null,
+      });
     }
+
+    if (event.kind === 'assistant_response') {
+      log.conversation.push({
+        timestamp: now,
+        role: 'assistant',
+        source: event.source || null,
+        text: event.text || '',
+        agent: event.agent || null,
+      });
+    }
+
+    if (event.kind !== 'user_prompt' && event.kind !== 'assistant_response') {
+      log.systemTrace.push({
+        timestamp: now,
+        kind: event.kind,
+        source: event.source || null,
+        agent: event.agent || null,
+        taskId: event.taskId || null,
+        provider: event.provider || null,
+        model: event.model || null,
+        text: event.text || '',
+        metadata: event.metadata || null,
+      });
+    }
+
+    const preview = (event.text || '').replace(/\s+/g, ' ').trim().slice(0, 160);
+    log.timeline.push({
+      timestamp: now,
+      kind: event.kind,
+      source: event.source || null,
+      agent: event.agent || null,
+      taskId: event.taskId || null,
+      preview,
+    });
 
     log.updatedAt = now;
     writeFileSync(logPath, JSON.stringify(log, null, 2) + '\n', 'utf-8');
