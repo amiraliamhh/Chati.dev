@@ -18,7 +18,9 @@ import { buildAgentPrompt } from './prompt-builder.js';
 import { spawnTerminal } from './spawner.js';
 import { parseAgentOutput } from './handoff-parser.js';
 import { createCostTracker } from './cost-tracker.js';
-import { track as telemetryTrack } from '../telemetry/collector.js';
+import { initCollector, track as telemetryTrack, flush as telemetryFlush } from '../telemetry/collector.js';
+import { sendEvents } from '../telemetry/sender.js';
+import { getTelemetryConfig, isEnabled as isTelemetryEnabled } from '../telemetry/config.js';
 
 // ---------------------------------------------------------------------------
 // CLI argument parsing (no external deps)
@@ -61,6 +63,9 @@ async function main() {
 
   const projectDir = args['project-dir'] || process.cwd();
   const timeout = parseInt(args.timeout, 10) || 600_000; // default 10 minutes
+
+  // Initialize telemetry for this process
+  initCollector(isTelemetryEnabled(projectDir));
 
   // Load session state if available
   let sessionState = {};
@@ -123,6 +128,7 @@ async function main() {
       provider: promptResult.provider || args.provider || 'claude',
       phase: sessionState?.phase || 'unknown',
     });
+    await flushAndSend(projectDir);
     outputError(`Terminal execution failed: ${err.message}`);
     process.exit(2);
   }
@@ -176,6 +182,9 @@ async function main() {
     });
   }
 
+  // Flush telemetry before exit
+  await flushAndSend(projectDir);
+
   // Parse the handoff from stdout
   const parsed = parseAgentOutput(stdout);
 
@@ -212,6 +221,22 @@ async function main() {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Flush buffered telemetry events and send to the backend.
+ * Fire-and-forget — never blocks process exit on failure.
+ */
+async function flushAndSend(projectDir) {
+  const events = telemetryFlush();
+  if (events.length === 0) return;
+
+  try {
+    const tConfig = getTelemetryConfig(projectDir);
+    await sendEvents(events, { ...tConfig, version: tConfig.chatiVersion || 'unknown' });
+  } catch {
+    // Silently fail — telemetry must never block agent execution
+  }
+}
 
 /**
  * Wait for a terminal handle's process to exit.
