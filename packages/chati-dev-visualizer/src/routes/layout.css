@@ -1,0 +1,13 @@
+@import 'tailwindcss';
+@plugin '@tailwindcss/forms';
+@plugin '@tailwindcss/typography';
+
+@layer base {
+	button,
+	[role='button'],
+	a[href],
+	label[for],
+	summary {
+		cursor: pointer;
+	}
+}

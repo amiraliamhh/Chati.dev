@@ -19,6 +19,7 @@
   "scripts": {
     "init": "npm -w packages/chati-dev run init",
     "status": "npm -w packages/chati-dev run status",
+    "bundle": "npm -w packages/chati-dev run bundle && npm -w chati-dev-visualizer run build",
     "test": "echo \"See packages/chati-dev for tests\""
   },
   "keywords": [
