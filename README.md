@@ -110,6 +110,30 @@ npx chati-dev status          # One-time snapshot
 npx chati-dev status --watch  # Auto-refresh every 5s
 ```
 
+### Visualizer
+
+For a richer view of what's happening, launch the built-in web dashboard:
+
+```bash
+npx chati-dev visualize
+```
+
+This opens a local web app that reads your project's session state, interaction logs, agent handoffs, and generated artifact documents in real time. No data leaves your machine.
+
+<img src="packages/chati-dev-visualizer/demo/visualizer-1.png" alt="Chati.dev Visualizer — Overview" style="border-radius: 8px;">
+
+The dashboard has seven views accessible from the sidebar:
+
+| View | What you see |
+|------|-------------|
+| **Overview** | Project state, agent handoff cards, and a pipeline timeline of generated documents |
+| **Conversation** | The full user ↔ LLM dialogue with preserved formatting |
+| **Timeline** | Every pipeline event in chronological order, filterable by kind, agent, and provider |
+| **Agents** | Per-agent status board — completed, partial, observed, skipped, or not used in this pipeline |
+| **Pipeline** | Visual flow of the active pipeline with per-node status indicators |
+| **LLM Trace** | Raw internal prompts and LLM responses for debugging |
+| **Inspector** | Click any event to view its full JSON payload |
+
 ### Exit & Resume
 
 | CLI | Exit | Resume |
@@ -310,6 +334,7 @@ All IDEs use a thin router file that points to the same orchestrator. Your proje
 | `npx chati-dev install` | Install into existing project |
 | `npx chati-dev status` | Show project dashboard |
 | `npx chati-dev status --watch` | Auto-refresh dashboard every 5s |
+| `npx chati-dev visualize` | Launch the web visualizer dashboard |
 | `npx chati-dev health` | Run system health check (5 checks) |
 | `npx chati-dev check-update` | Check for updates |
 | `npx chati-dev upgrade` | Upgrade to latest version |
