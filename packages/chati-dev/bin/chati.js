@@ -287,6 +287,18 @@ async function main() {
       break;
     }
 
+    case 'visualize': {
+      const portIdx = args.indexOf('--port');
+      const hostIdx = args.indexOf('--host');
+      const port = portIdx !== -1 ? args[portIdx + 1] : '4179';
+      const host = hostIdx !== -1 ? args[hostIdx + 1] : '127.0.0.1';
+      const { runVisualizer } = await import('../src/visualizer/launcher.js');
+      console.log(`Starting visualizer for project: ${targetDir}`);
+      console.log(`Serving on http://${host}:${port}`);
+      await runVisualizer(targetDir, { port, host });
+      break;
+    }
+
     case 'changelog': {
       console.log(`Chati.dev v${pkg.version} Changelog`);
       console.log('═'.repeat(40));
@@ -329,6 +341,8 @@ async function main() {
   npx chati-dev upgrade --version X.Y.Z Upgrade to specific version
   npx chati-dev changelog               View changelog
   npx chati-dev --reconfigure           Reconfigure installation
+  npx chati-dev visualize               Start visualizer server
+  npx chati-dev visualize --port 4179   Visualizer with custom port
   npx chati-dev --version               Show version
   npx chati-dev --help                  Show this help
 

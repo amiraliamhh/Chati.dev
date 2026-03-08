@@ -44,6 +44,20 @@ export async function installFramework(config) {
     generateSessionYaml({ projectName, projectType, language, selectedIDEs, selectedMCPs, llmProvider, allProviders }),
     'utf-8'
   );
+  writeFileSync(
+    join(targetDir, '.chati', 'interaction-log.json'),
+    JSON.stringify({
+      schemaVersion: 2,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      interactions: [],
+      userPrompts: [],
+      conversation: [],
+      systemTrace: [],
+      timeline: [],
+    }, null, 2) + '\n',
+    'utf-8'
+  );
 
   // 2. Create chati.dev/ framework directory (copy from source)
   const frameworkDir = join(targetDir, 'chati.dev');
@@ -211,6 +225,7 @@ function copyFrameworkFiles(destDir, provider = 'claude') {
     'hooks/constitution-guard.js',
     'hooks/session-digest.js',
     'hooks/model-governance.js',
+    'hooks/interaction-logger.js',
     'hooks/settings.json',
     'hooks/read-protection.js',
     // Domains (PRISM Context Engine)
@@ -316,6 +331,7 @@ Pass through all context: session state, handoffs, artifacts, and user input.
 **User input:** $ARGUMENTS
 `;
     writeFileSync(join(targetDir, '.claude', 'commands', 'chati.md'), routerContent, 'utf-8');
+    ensureClaudeHooksSettings(targetDir);
 
     // MCP config
     if (selectedMCPs.length > 0) {
@@ -376,6 +392,70 @@ Pass through all context: session state, handoffs, artifacts, and user input.
 }
 
 /**
+ * Ensure Claude Code project hooks are configured in .claude/settings.json.
+ * Merges chati.dev hook groups into existing settings without removing
+ * unrelated user settings.
+ */
+function ensureClaudeHooksSettings(targetDir) {
+  const settingsPath = join(targetDir, '.claude', 'settings.json');
+  const templatePath = join(FRAMEWORK_SOURCE, 'hooks', 'settings.json');
+
+  if (!existsSync(templatePath)) return;
+
+  let template;
+  try {
+    template = JSON.parse(readFileSync(templatePath, 'utf-8'));
+  } catch {
+    return;
+  }
+
+  let settings = {};
+  if (existsSync(settingsPath)) {
+    try {
+      settings = JSON.parse(readFileSync(settingsPath, 'utf-8'));
+    } catch {
+      // Avoid clobbering malformed user settings.
+      return;
+    }
+  }
+
+  if (!settings.hooks || typeof settings.hooks !== 'object') {
+    settings.hooks = {};
+  }
+
+  const templateHooks = template.hooks || {};
+  for (const [eventName, groups] of Object.entries(templateHooks)) {
+    if (!Array.isArray(settings.hooks[eventName])) {
+      settings.hooks[eventName] = [];
+    }
+
+    const existingSignatures = new Set(
+      settings.hooks[eventName].map(group => JSON.stringify({
+        matcher: group?.matcher || null,
+        hooks: Array.isArray(group?.hooks)
+          ? group.hooks.map(h => `${h.type || 'command'}:${h.command || h.url || h.prompt || ''}`)
+          : [],
+      }))
+    );
+
+    for (const group of groups) {
+      const signature = JSON.stringify({
+        matcher: group?.matcher || null,
+        hooks: Array.isArray(group?.hooks)
+          ? group.hooks.map(h => `${h.type || 'command'}:${h.command || h.url || h.prompt || ''}`)
+          : [],
+      });
+      if (!existingSignatures.has(signature)) {
+        settings.hooks[eventName].push(group);
+        existingSignatures.add(signature);
+      }
+    }
+  }
+
+  writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n', 'utf-8');
+}
+
+/**
  * Generate provider-agnostic instructions file content.
  * Used for non-Claude IDEs (.vscode/chati/rules.md, .cursorrules, etc.)
  */
@@ -422,6 +502,7 @@ function updateGitignore(targetDir, selectedIDEs) {
     '',
     '# Chati.dev runtime files (session lock — not committed)',
     '.chati/memories/*/session/',
+    '.chati/interaction-log.json',
   ];
 
   if (selectedIDEs.includes('claude-code')) {

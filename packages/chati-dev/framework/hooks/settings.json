@@ -12,6 +12,20 @@
           {
             "type": "command",
             "command": "node chati.dev/hooks/model-governance.js"
+          },
+          {
+            "type": "command",
+            "command": "node chati.dev/hooks/interaction-logger.js"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node chati.dev/hooks/interaction-logger.js"
           }
         ]
       }
@@ -27,7 +41,37 @@
         ]
       }
     ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node chati.dev/hooks/interaction-logger.js"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node chati.dev/hooks/interaction-logger.js"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node chati.dev/hooks/interaction-logger.js"
+          }
+        ]
+      },
       {
         "matcher": "Read",
         "hooks": [
@@ -56,6 +100,28 @@
           {
             "type": "command",
             "command": "node chati.dev/hooks/constitution-guard.js"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node chati.dev/hooks/interaction-logger.js"
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node chati.dev/hooks/interaction-logger.js"
           }
         ]
       }

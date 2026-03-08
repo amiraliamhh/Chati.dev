@@ -21,6 +21,7 @@ import { TerminalMonitor } from './monitor.js';
 import { collectResults, mergeHandoffs, buildConsolidatedHandoff } from './collector.js';
 import { parseAgentOutput } from './handoff-parser.js';
 import { estimateTokens, COST_PER_1K } from './cost-tracker.js';
+import { appendInteraction } from '../logging/interaction-logger.js';
 
 // ---------------------------------------------------------------------------
 // CLI argument parsing
@@ -72,6 +73,19 @@ async function main() {
   const previousAgent = args['previous-agent'] || null;
   const timeout = parseInt(args.timeout, 10) || 900_000; // default 15 minutes
 
+  if (args['additional-context']) {
+    appendInteraction(projectDir, {
+      kind: 'user_prompt',
+      source: 'additional-context',
+      text: args['additional-context'],
+      agent: agents.join(','),
+      taskId: taskIds.join(','),
+      provider: args.provider || 'claude',
+      model: null,
+      metadata: { mode: 'parallel' },
+    });
+  }
+
   // Load session state
   let sessionState = {};
   try {
@@ -112,6 +126,17 @@ async function main() {
         prompt: promptResult.prompt,
         workingDir: projectDir,
         timeout,
+      });
+
+      appendInteraction(projectDir, {
+        kind: 'generated_prompt',
+        source: 'prompt-builder',
+        text: promptResult.prompt || '',
+        agent: agents[i],
+        taskId: taskIds[i],
+        provider: promptResult.provider || args.provider || 'claude',
+        model: promptResult.model,
+        metadata: { mode: 'parallel' },
       });
     } catch (err) {
       outputError(`Failed to build prompt for ${agents[i]}: ${err.message}`);
@@ -172,6 +197,33 @@ async function main() {
 
   // Collect and merge results
   const rawResults = collectResults(group.groupId, group.terminals);
+
+  for (let i = 0; i < rawResults.results.length; i++) {
+    const result = rawResults.results[i];
+    const cfg = configs[i] || {};
+    appendInteraction(projectDir, {
+      kind: 'llm_response',
+      source: 'agent-stdout',
+      text: result.stdout || '',
+      agent: result.agent,
+      taskId: result.taskId,
+      provider: cfg.provider || args.provider || 'claude',
+      model: cfg.model || null,
+      metadata: { mode: 'parallel', exitCode: result.exitCode },
+    });
+    if (result.stderr) {
+      appendInteraction(projectDir, {
+        kind: 'llm_stderr',
+        source: 'agent-stderr',
+        text: result.stderr,
+        agent: result.agent,
+        taskId: result.taskId,
+        provider: cfg.provider || args.provider || 'claude',
+        model: cfg.model || null,
+        metadata: { mode: 'parallel', exitCode: result.exitCode },
+      });
+    }
+  }
 
   // Parse handoffs from each terminal's stdout
   const agentResults = rawResults.results.map(r => {
